@@ -12,8 +12,22 @@
  *
  */
 
+/* Include order and names:
+ * a) Immediate related header
+ * b) C libraries (if any),
+ * c) C++ libraries,
+ * d) Other support libraries
+ * e) Other project's support libraries
+ *
+ * Within each section the includes should
+ * be ordered alphabetically.
+ */
+
 #include "ldap_client.hpp"
 
+#ifndef LDAP_AUTH_MECHANISM_HPP
+  #error "This file may only be included from <ldap_client.hpp>"
+#endif
 
 namespace ldap_client_auth {
 

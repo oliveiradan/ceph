@@ -15,10 +15,22 @@
 #ifndef GSS_UTILS_HPP
 #define GSS_UTILS_HPP
 
-#include <string>
-#include "common_utils.hpp"
+/* Include order and names:
+ * a) Immediate related header
+ * b) C libraries (if any),
+ * c) C++ libraries,
+ * d) Other support libraries
+ * e) Other project's support libraries
+ *
+ * Within each section the includes should
+ * be ordered alphabetically.
+ */
 
-#include "gssapi.h"
+#include <gssapi.h>
+
+#include <string>
+
+#include "common_utils.hpp"
 
 
 namespace gss_utils {
@@ -37,20 +49,16 @@ static const std::string GSS_API_KRB5_OID("{1.2.840.113554.1.2.2}");
 ///
 std::string transform_gss_oid(const std::string&);
 
-void show_msg_helper(OM_uint32 gss_msg_code,
-                     int gss_msg_type,
-                     char* gss_msg,
-                     int gss_size);
+void show_msg_helper(OM_uint32, int, char*, int);
 
 class GSSExceptionHandler : public std::exception
 {
   public:
     GSSExceptionHandler() throw() : m_gss_major_status(GSS_S_COMPLETE),
                                     m_gss_minor_status(GSS_S_COMPLETE) { }
-    GSSExceptionHandler(OM_uint32 gss_major_status,
-                        OM_uint32 gss_minor_status,
-                        const char* gss_func =
-                            common_utils::EMPTY_STR.c_str()) throw();
+    GSSExceptionHandler(OM_uint32, OM_uint32,
+                        const char* =
+                          common_utils::EMPTY_STR.c_str()) throw();
 
     ~GSSExceptionHandler() throw() override = default;
     const char* what() const throw() override;

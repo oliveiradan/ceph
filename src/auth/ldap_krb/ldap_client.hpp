@@ -15,14 +15,26 @@
 #ifndef LDAP_CLIENT_HPP
 #define LDAP_CLIENT_HPP
 
+#ifndef __cplusplus
+  #error "C++ Compiler is required for this library <ldap_client.hpp>"
+#endif
+
+/* Include order and names:
+ * a) Immediate related header
+ * b) C libraries (if any),
+ * c) C++ libraries,
+ * d) Other support libraries
+ * e) Other project's support libraries
+ *
+ * Within each section the includes should
+ * be ordered alphabetically.
+ */
+
 #include <string>
-
-#include <boost/asio.hpp>
-
-#include "ldap_auth_mechanism.hpp"
 
 #include "auth_mechanism.hpp"
 #include "auth_options.hpp"
+#include "ldap_auth_mechanism.hpp"
 
 
 namespace ldap_client_auth {
@@ -32,7 +44,8 @@ class LDAPClientAuthentication : public LDAPMechanismBase
 
   public:
     LDAPClientAuthentication() = default;
-    LDAPClientAuthentication(const std::string&, const ldap_utils::LDAPSSLOption&);
+    LDAPClientAuthentication(const std::string&,
+                             const ldap_utils::LDAPSSLOption&);
     ~LDAPClientAuthentication() = default;
 
   private:

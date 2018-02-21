@@ -12,7 +12,22 @@
  *
  */
 
+/* Include order and names:
+ * a) Immediate related header
+ * b) C libraries (if any),
+ * c) C++ libraries,
+ * d) Other support libraries
+ * e) Other project's support libraries
+ *
+ * Within each section the includes should
+ * be ordered alphabetically.
+ */
+
+#include <cstring>
+
 #include "gss_utils.hpp"
+
+#include "gss_auth_mechanism.hpp"
 
 
 namespace gss_utils {
@@ -37,16 +52,23 @@ namespace gss_utils {
  */
 std::string transform_gss_oid(const std::string& oid_to_check) {
   if (!oid_to_check.empty()) {
-    std::string new_gss_oid(str_trim(oid_to_check));
-    std::replace(begin(new_gss_oid), end(new_gss_oid), DOT, BLANK);
+    std::string new_gss_oid(common_utils::str_trim(oid_to_check));
+    std::replace(std::begin(new_gss_oid),
+                 std::end(new_gss_oid),
+                 common_utils::DOT,
+                 common_utils::BLANK);
 
     if (!new_gss_oid.empty() &&
-        std::all_of(begin(new_gss_oid), end(new_gss_oid),
-                    is_digit_or_blank)) {
-      if (!std::none_of(begin(new_gss_oid), end(new_gss_oid),
-                        is_open_or_close)) {
-        new_gss_oid.insert(begin(new_gss_oid), OPEN_OID);
-        new_gss_oid.insert(end(new_gss_oid), CLOSE_OID);
+        std::all_of(std::begin(new_gss_oid),
+                    std::end(new_gss_oid),
+                    common_utils::is_digit_or_blank)) {
+      if (!std::none_of(std::begin(new_gss_oid),
+                        std::end(new_gss_oid),
+                        common_utils::is_open_or_close)) {
+        new_gss_oid.insert(std::begin(new_gss_oid),
+                           common_utils::OPEN_OID);
+        new_gss_oid.insert(std::end(new_gss_oid),
+                           common_utils::CLOSE_OID);
       }
       return (new_gss_oid);
     }
@@ -99,7 +121,7 @@ void show_msg_helper(OM_uint32 gss_msg_code,
   auto position_tmp(0);
 
   do {
-    GSSDataBuffer gss_buff;
+    gss_client_auth::GSSDataBuffer gss_buff;
 
     gss_major_status = gss_display_status(&gss_minor_status,
                                           gss_msg_code,

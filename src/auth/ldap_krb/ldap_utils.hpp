@@ -15,6 +15,23 @@
 #ifndef LDAP_UTILS_HPP
 #define LDAP_UTILS_HPP
 
+/* Include order and names:
+ * a) Immediate related header
+ * b) C libraries (if any),
+ * c) C++ libraries,
+ * d) Other support libraries
+ * e) Other project's support libraries
+ *
+ * Within each section the includes should
+ * be ordered alphabetically.
+ */
+
+#include <ldap.h>
+#include <lber.h>
+#include <ldap_schema.h>
+#include <openssl/bio.h>
+#include <openssl/evp.h>
+
 #include <algorithm>
 #include <iostream>
 #include <iterator>
@@ -24,17 +41,12 @@
 #include <utility>
 #include <vector>
 
-#include <openssl/bio.h>
-#include <openssl/evp.h>
-
-#include "ldap.h"
-#include "lber.h"
-#include "ldap_schema.h"
-
 #include "common_utils.hpp"
 
 
 namespace ldap_utils {
+
+using LDAPPtr_t = LDAP*;
 
 std::vector<char> base64_encode(const char*, const size_t);
 auto base64_encode(const std::string&);
@@ -50,11 +62,16 @@ static constexpr uint32_t LDAP_ENTRY_DEFAULT_VECTOR_SIZE(64);
 static constexpr uint32_t LDAP_MODIFY_DEFAULT_SIZE(4);
 
 //-- TODO: Convert (where possible) std::string to std::string_view.
-static const std::string LDAP_DEFAULT_PORT_STR(std::to_string(LDAP_DEFAULT_PORT_NUM));
-static const std::string LDAPS_DEFAULT_PORT_STR(std::to_string(LDAPS_DEFAULT_PORT_NUM));
-static const std::string LDAP_SERVICE_NAME("ldap");
-static const std::string LDAPS_SERVICE_NAME("ldaps");
-static const std::string LDAP_DEFAULT_SEARCH_FILTER("objectClass=*");
+static const std::string
+      LDAP_DEFAULT_PORT_STR(std::to_string(LDAP_DEFAULT_PORT_NUM));
+static const std::string
+      LDAPS_DEFAULT_PORT_STR(std::to_string(LDAPS_DEFAULT_PORT_NUM));
+static const std::string
+      LDAP_SERVICE_NAME("ldap");
+static const std::string
+      LDAPS_SERVICE_NAME("ldaps");
+static const std::string
+      LDAP_DEFAULT_SEARCH_FILTER("objectClass=*");
 
 
 class LDAPExceptionHandler : public std::exception
@@ -74,7 +91,6 @@ class LDAPExceptionHandler : public std::exception
     LDAPPtr_t m_ldap_connection_handler{nullptr};
     int m_ldap_status{0};
 };
-
 
 
 // Possible/valid gss authentication options.

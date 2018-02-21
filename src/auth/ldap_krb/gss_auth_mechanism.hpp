@@ -15,10 +15,21 @@
 #ifndef GSS_AUTH_MECHANISM_HPP
 #define GSS_AUTH_MECHANISM_HPP
 
+/* Include order and names:
+ * a) Immediate related header
+ * b) C libraries (if any),
+ * c) C++ libraries,
+ * d) Other support libraries
+ * e) Other project's support libraries
+ *
+ * Within each section the includes should
+ * be ordered alphabetically.
+ */
+
+#include <algorithm>
 #include <string>
 
 #include "auth_mechanism.hpp"
-#include "auth_options.hpp"
 #include "gss_utils.hpp"
 
 
@@ -192,18 +203,28 @@ class GSSSecCredential;
 class GSSSecurityCtx;
 class GSSDataBuffer;
 
-class GSSMechanismBase //: public AuthMechanism
+class GSSMechanismBase //: public auth_mechanisms::AuthMechanism
 {
   public:
+      /*explicit*/ GSSMechanismBase(const std::string&);
       GSSMechanismBase() : m_gss_oid(GSS_C_NO_OID) { }
-      explicit GSSMechanismBase(gss_OID gss_oid) : m_gss_oid(gss_oid) { }
-      explicit GSSMechanismBase(const std::string& gss_mechanism);
+      /*explicit*/ GSSMechanismBase(gss_OID gss_oid) : m_gss_oid(gss_oid) { }
 
-      size_t size() const { return m_gss_oid->length; }
+      /*
+      GSSMechanismBase(const gss_OID& gss_oid) {
+        m_gss_oid = gss_oid;
+      }
+      GSSMechanismBase& operator= (const GSSMechanismBase& gss_mechanism) {
+        m_gss_oid = gss_mechanism.m_gss_oid;
+        return *this;
+      }
+      */
+
+      size_t get_size() const { return m_gss_oid->length; }
       std::string get_string() const;
 
-      explicit operator gss_OID () { return m_gss_oid; }
-      explicit operator gss_OID* () { return &m_gss_oid; }
+      /*explicit*/ operator gss_OID() { return m_gss_oid; }
+      /*explicit*/ operator gss_OID*() { return &m_gss_oid; }
 
 
   private:
@@ -223,14 +244,14 @@ class GSSMechanismList
     size_t gss_mechanism_getsize()  const { return m_gss_oid_set->count; }
     bool is_it_empty() const { return !gss_mechanism_getsize(); }
 
-    void gss_mechanism_add(const GSSMechanismBase& gss_mechanism);
-    bool is_it_gss_mechanism_set(const GSSMechanismBase& gss_mechanism) const;
+    void gss_mechanism_add(const GSSMechanismBase&);
+    bool is_it_gss_mechanism_set(const GSSMechanismBase&) const;
     const GSSMechanismBase at(size_t idx) const;
 
     const GSSMechanismBase operator[] (size_t idx) const;
-    GSSMechanismList& operator+= (const GSSMechanismBase& gss_mechanism);
-    operator gss_OID_set () { return m_gss_oid_set; }
-    operator gss_OID_set* () { return &m_gss_oid_set; }
+    GSSMechanismList& operator+= (const GSSMechanismBase&);
+    operator gss_OID_set() { return m_gss_oid_set; }
+    operator gss_OID_set*() { return &m_gss_oid_set; }
 
   private:
     gss_OID_set m_gss_oid_set;
@@ -255,34 +276,51 @@ class GSSNameType
     */
     static constexpr auto MAX_NAME_OPTIONS = 7;
 
-    GSSNameType() : m_gss_type_name( GSS_C_NO_NAME ) {}
+    GSSNameType() : m_gss_type_name( GSS_C_NO_NAME ) { }
     GSSNameType(const GSSNameType&);
-    explicit GSSNameType(const gss_name_t&);
-    explicit GSSNameType(const GSSDataBuffer&, GSSNameOption& gss_name_type = GSSNameOption::NT_HOSTBASED_SERVICE);
-    explicit GSSNameType(const char*, GSSNameOption& gss_name_type = GSSNameOption::NT_HOSTBASED_SERVICE);
-    explicit GSSNameType(const std::string&, GSSNameOption& gss_name_type = GSSNameOption::NT_HOSTBASED_SERVICE);
+    /*explicit*/ GSSNameType(const gss_name_t&);
+    /*explicit*/ GSSNameType(const GSSDataBuffer&,
+                             GSSNameOption =
+                                GSSNameOption::NT_HOSTBASED_SERVICE);
+    /*explicit*/ GSSNameType(const char*,
+                             GSSNameOption =
+                                GSSNameOption::NT_HOSTBASED_SERVICE);
+    /*explicit*/ GSSNameType(const std::string&,
+                             GSSNameOption  =
+                                GSSNameOption::NT_HOSTBASED_SERVICE);
     ~GSSNameType() { gss_name_type_clear(); }
 
     void gss_name_type_set(const GSSNameType&);
     void gss_name_type_set(const gss_name_t&);
-    void gss_name_type_set(const GSSDataBuffer&, GSSNameOption& gss_name_type = GSSNameOption::NT_HOSTBASED_SERVICE);
-    void gss_name_type_set(const char*, GSSNameOption& gss_name_type = GSSNameOption::NT_HOSTBASED_SERVICE);
-    void gss_name_type_set(const std::string&, GSSNameOption& gss_name_type = GSSNameOption::NT_HOSTBASED_SERVICE);
+    void gss_name_type_set(const GSSDataBuffer&,
+                           GSSNameOption =
+                              GSSNameOption::NT_HOSTBASED_SERVICE);
+    void gss_name_type_set(const char*,
+                           GSSNameOption =
+                              GSSNameOption::NT_HOSTBASED_SERVICE);
+    void gss_name_type_set(const std::string&,
+                           GSSNameOption =
+                              GSSNameOption::NT_HOSTBASED_SERVICE);
 
-    GSSNameType& operator= (const GSSNameType& lhs) { gss_name_type_set(lhs); return *this; }
-    GSSNameType& operator= (const GSSDataBuffer& lhs) { gss_name_type_set(lhs); return *this; }
-    GSSNameType& operator= (const gss_name_t& lhs) { gss_name_type_set(lhs); return *this; }
-    GSSNameType& operator= (const char* lhs) { gss_name_type_set(lhs); return *this; }
-    GSSNameType& operator= (const std::string& lhs) { gss_name_type_set(lhs); return *this; }
+    GSSNameType& operator= (const GSSNameType& lhs)
+    { gss_name_type_set(lhs); return *this; }
+    GSSNameType& operator= (const GSSDataBuffer& lhs)
+    { gss_name_type_set(lhs); return *this; }
+    GSSNameType& operator= (const gss_name_t& lhs)
+    { gss_name_type_set(lhs); return *this; }
+    GSSNameType& operator= (const char* lhs)
+    { gss_name_type_set(lhs); return *this; }
+    GSSNameType& operator= (const std::string& lhs)
+    { gss_name_type_set(lhs); return *this; }
 
-    bool operator== (const GSSNameType& lhs) const;
-    bool operator== (const std::string& lhs) const;
-    bool operator!= (const GSSNameType& lhs) const;
-    bool operator!= (const std::string& lhs) const;
+    bool operator== (const GSSNameType&) const;
+    bool operator!= (const GSSNameType&) const;
+    bool operator== (const std::string&) const;
+    bool operator!= (const std::string&) const;
 
-    explicit operator gss_name_t* () { return &m_gss_type_name; }
-    explicit operator gss_name_t () { return m_gss_type_name; }
-    explicit operator const gss_name_t() const { return m_gss_type_name;  }
+    /*explicit*/ operator gss_name_t*() { return &m_gss_type_name; }
+    /*explicit*/ operator gss_name_t() { return m_gss_type_name; }
+    /*explicit*/ operator const gss_name_t() const { return m_gss_type_name; }
 
     void swap(gss_name_t&);
     void swap(GSSNameType&);
@@ -291,10 +329,10 @@ class GSSNameType
     bool is_it_empty() const { return (m_gss_type_name == GSS_C_NO_NAME); }
     bool is_it_valid_type_name() const { return !is_it_empty(); }
 
-    std::string get_string(GSSNameOption* gss_name_type = nullptr) const;
-    GSSNameType standardize_type_name(const GSSMechanismBase& gss_mechanism) const;
-    GSSDataBuffer gss_name_export(const GSSMechanismBase& gss_mechanism) const;
-    void gss_name_import(const GSSDataBuffer& gss_buff, GSSNameOption& gss_name_type);
+    std::string get_string(GSSNameOption* = nullptr) const;
+    GSSNameType standardize_type_name(const GSSMechanismBase&) const;
+    GSSDataBuffer gss_name_export(const GSSMechanismBase&) const;
+    void gss_name_import(const GSSDataBuffer&, GSSNameOption&);
 
 
   private:
@@ -308,8 +346,9 @@ class GSSSecCredential
 {
   public:
     GSSSecCredential() : m_gss_credential(GSS_C_NO_CREDENTIAL) { }
-    explicit GSSSecCredential(gss_cred_id_t gss_credential) : m_gss_credential(gss_credential) { }
-    explicit GSSSecCredential(const GSSNameType& gss_name_type);
+    /*explicit*/ GSSSecCredential(gss_cred_id_t gss_credential) :
+        m_gss_credential(gss_credential) { }
+    /*explicit*/ GSSSecCredential(const GSSNameType&);
     ~GSSSecCredential() { gss_credential_clear(); }
 
     /*  No *copy* [constructor OR assignment] allowed.
@@ -317,8 +356,8 @@ class GSSSecCredential
     GSSSecCredential(const GSSSecCredential&) = delete;
     GSSSecCredential& operator= (const GSSSecCredential&) = delete;
 
-    explicit operator gss_cred_id_t () { return m_gss_credential; }
-    explicit operator gss_cred_id_t *() { return &m_gss_credential; }
+    /*explicit*/ operator gss_cred_id_t() { return m_gss_credential; }
+    /*explicit*/ operator gss_cred_id_t*() { return &m_gss_credential; }
 
     void gss_credential_clear();
 
@@ -333,16 +372,16 @@ class GSSSecurityCtx
 {
   public:
     GSSSecurityCtx() : m_gss_ctx(GSS_C_NO_CONTEXT) { }
-    explicit GSSSecurityCtx(const GSSDataBuffer& gss_buff);
+    /*explicit*/ GSSSecurityCtx(const GSSDataBuffer&);
 
-    GSSSecurityCtx& operator= (const GSSSecurityCtx& lhs);
+    GSSSecurityCtx& operator= (const GSSSecurityCtx&);
     ~GSSSecurityCtx() { gss_ctx_clear(); }
 
     void gss_ctx_clear();
     bool is_it_valid_ctx() { return m_gss_ctx != GSS_C_NO_CONTEXT; }
 
     gss_ctx_id_t get_raw_ctx() { return m_gss_ctx; }
-    const gss_ctx_id_t get_raw_ctx() const { return m_gss_ctx; }
+    gss_ctx_id_t get_raw_ctx() const { return m_gss_ctx; }
 
     operator gss_ctx_id_t() { return get_raw_ctx();  }
     operator const gss_ctx_id_t() const { return get_raw_ctx();  }
@@ -353,7 +392,7 @@ class GSSSecurityCtx
     {
       public:
         GSSSecurityCtxFlag() : m_gss_ctx_flags(0) { }
-        explicit GSSSecurityCtxFlag(OM_uint32 gss_ctx_flags) :
+        /*explicit*/ GSSSecurityCtxFlag(OM_uint32 gss_ctx_flags) :
             m_gss_ctx_flags(gss_ctx_flags) { }
 
         void gss_ctx_flag_set(OM_uint32 gss_flag_bit,
@@ -406,41 +445,54 @@ class GSSSecurityCtx
         OM_uint32 m_gss_ctx_flags;
     };
 
-    bool gss_initiate_ctx(GSSDataBuffer& gss_buff_in,
-                          const GSSNameType& gss_name_type,
-                          const GSSSecurityCtxFlag& gss_ctx_flag,
-                          const GSSSecCredential& gss_credential = GSS_C_NO_CREDENTIAL,
-                          GSSMechanismBase gss_mechanism = GSS_C_NO_OID,
-                          OM_uint32 gss_required_time = 0,
-                          gss_channel_bindings_t gss_channel_bindings = GSS_C_NO_CHANNEL_BINDINGS);
+    bool gss_initiate_ctx(GSSDataBuffer&,
+                          const GSSNameType&,
+                          const GSSSecurityCtxFlag&,
+                          const GSSSecCredential& = GSS_C_NO_CREDENTIAL,
+                          GSSMechanismBase = GSS_C_NO_OID,
+                          OM_uint32 = 0,
+                          gss_channel_bindings_t = GSS_C_NO_CHANNEL_BINDINGS);
 
-    bool gss_allow_ctx(GSSDataBuffer& gss_buff_in,
-                       const GSSSecCredential& gss_credential = GSS_C_NO_CREDENTIAL,
-                       gss_channel_bindings_t gss_channel_bindings = GSS_C_NO_CHANNEL_BINDINGS);
+    bool gss_allow_ctx(GSSDataBuffer&,
+                       const GSSSecCredential& = GSS_C_NO_CREDENTIAL,
+                       gss_channel_bindings_t = GSS_C_NO_CHANNEL_BINDINGS);
 
-    void gss_ctx_import(const GSSDataBuffer& gss_buff);
+    void gss_ctx_import(const GSSDataBuffer&);
     GSSDataBuffer gss_ctx_export();
 
-    GSSDataBuffer get_gss_ctx_mic(const GSSDataBuffer& gss_buff_msg, gss_qop_t gss_qop = GSS_C_QOP_DEFAULT) const;
-    bool gss_ctx_mic_check(const GSSDataBuffer& gss_buff_msg, const GSSDataBuffer& gss_buff_mic, gss_qop_t* qop_state = nullptr) const;
+    GSSDataBuffer get_gss_ctx_mic(const GSSDataBuffer&,
+                                  gss_qop_t = GSS_C_QOP_DEFAULT) const;
+    bool gss_ctx_mic_check(const GSSDataBuffer&,
+                           const GSSDataBuffer&,
+                           gss_qop_t* = nullptr) const;
 
-    GSSDataBuffer gss_msg_wrap(const GSSDataBuffer& gss_buff_msg, bool flag_encryption, gss_qop_t qop = GSS_C_QOP_DEFAULT) const;
-    void gss_msg_wrap_in_place(GSSDataBuffer& gss_buff_msg, bool flag_encryption, gss_qop_t qop = GSS_C_QOP_DEFAULT) const;
-    static GSSDataBuffer gss_msg_wrap(const GSSSecurityCtx& gss_ctx, const GSSDataBuffer& gss_buff_msg, bool flag_encryption,
-                                      gss_qop_t qop = GSS_C_QOP_DEFAULT);
-    static void gss_msg_wrap_in_place(const GSSSecurityCtx& gss_ctx, GSSDataBuffer& gss_buff_msg, bool flag_encryption,
-                                      gss_qop_t qop = GSS_C_QOP_DEFAULT);
+    GSSDataBuffer gss_msg_wrap(const GSSDataBuffer&, bool,
+                               gss_qop_t = GSS_C_QOP_DEFAULT) const;
+    void gss_msg_wrap_in_place(GSSDataBuffer&, bool,
+                               gss_qop_t = GSS_C_QOP_DEFAULT) const;
+    static GSSDataBuffer gss_msg_wrap(const GSSSecurityCtx&,
+                                      const GSSDataBuffer&, bool,
+                                      gss_qop_t = GSS_C_QOP_DEFAULT);
+    static void gss_msg_wrap_in_place(const GSSSecurityCtx&,
+                                      GSSDataBuffer&, bool,
+                                      gss_qop_t = GSS_C_QOP_DEFAULT);
 
-    GSSDataBuffer gss_msg_unwrap(const GSSDataBuffer& gss_buff_wrapped_msg, bool* flag_confidential = nullptr,
-                                 gss_qop_t* qop_state = nullptr) const;
-    void gss_msg_unwrap_in_place(GSSDataBuffer& gss_buff_wrapped_msg, bool* flag_confidential = nullptr,
-                                 gss_qop_t* qop_state = nullptr) const;
-    static GSSDataBuffer gss_msg_unwrap(const GSSSecurityCtx& gss_ctx, const GSSDataBuffer& gss_buff_msg,
-                                        bool* flag_confidential = nullptr, gss_qop_t* qop_state = nullptr);
-    static void gss_msg_unwrap_in_place(const GSSSecurityCtx& gss_ctx, GSSDataBuffer& gss_buff_msg,
-                                        bool* flag_confidential = nullptr, gss_qop_t* qop_state = nullptr);
+    GSSDataBuffer gss_msg_unwrap(const GSSDataBuffer&,
+                                 bool* = nullptr,
+                                 gss_qop_t* = nullptr) const;
+    void gss_msg_unwrap_in_place(GSSDataBuffer&, bool* = nullptr,
+                                 gss_qop_t* = nullptr) const;
+    static GSSDataBuffer gss_msg_unwrap(const GSSSecurityCtx&,
+                                        const GSSDataBuffer&,
+                                        bool* = nullptr,
+                                        gss_qop_t* = nullptr);
+    static void gss_msg_unwrap_in_place(const GSSSecurityCtx&,
+                                        GSSDataBuffer&,
+                                        bool* = nullptr,
+                                        gss_qop_t* = nullptr);
 
-    size_t gss_msg_wrap_size_limit(size_t gss_msg_max_size, bool flag_encryption, gss_qop_t qop = GSS_C_QOP_DEFAULT) const;
+    size_t gss_msg_wrap_size_limit(size_t, bool,
+                                   gss_qop_t = GSS_C_QOP_DEFAULT) const;
 
   private:
     gss_ctx_id_t m_gss_ctx;
@@ -451,26 +503,33 @@ class GSSDataBuffer
 {
   public:
     GSSDataBuffer() : m_gss_buffer() { }
-    GSSDataBuffer(const GSSDataBuffer& gss_buff);
-    explicit GSSDataBuffer(const gss_buffer_desc& gss_buff);
-    explicit GSSDataBuffer(size_t gss_buff_size);
-    explicit GSSDataBuffer(const char* gss_str);
-    GSSDataBuffer(const void* gss_str, size_t gss_buff_size);
-    explicit GSSDataBuffer(const std::string& gss_str);
-    GSSDataBuffer(std::istream& in_stream, size_t in_size);
+    GSSDataBuffer(const GSSDataBuffer&);
+    /*explicit*/ GSSDataBuffer(const gss_buffer_desc&);
+    /*explicit*/ GSSDataBuffer(size_t);
+    /*explicit*/ GSSDataBuffer(const char*);
+    GSSDataBuffer(const void*, size_t);
+    /*explicit*/ GSSDataBuffer(const std::string&);
+    GSSDataBuffer(std::istream&, size_t);
     ~GSSDataBuffer() { gss_buff_clear(); }
 
-    GSSDataBuffer& operator= (const GSSDataBuffer& lhs) { gss_buff_set(lhs); return (*this); }
-    GSSDataBuffer& operator= (const gss_buffer_desc& lhs) { gss_buff_set(lhs); return (*this); }
-    GSSDataBuffer& operator= (const char* lhs) { gss_buff_set(lhs); return (*this); }
-    GSSDataBuffer& operator= (const std::string& lhs) { gss_buff_set(lhs); return (*this); }
+    GSSDataBuffer& operator= (const GSSDataBuffer& lhs)
+    { gss_buff_set(lhs); return (*this); }
+
+    GSSDataBuffer& operator= (const gss_buffer_desc& lhs)
+    { gss_buff_set(lhs); return (*this); }
+
+    GSSDataBuffer& operator= (const char* lhs)
+    { gss_buff_set(lhs); return (*this); }
+
+    GSSDataBuffer& operator= (const std::string& lhs)
+    { gss_buff_set(lhs); return (*this); }
 
     void gss_buff_set(const GSSDataBuffer&);
     void gss_buff_set(const gss_buffer_desc&);
     void gss_buff_set(const char*);
-    void gss_buff_set(void*, size_t gss_buff_size);
+    void gss_buff_set(void*, size_t);
     void gss_buff_set(const std::string&);
-    void gss_buff_set(std::istream& in_stream, size_t in_size);
+    void gss_buff_set(std::istream&, size_t);
 
     void swap(GSSDataBuffer&);
     void swap(gss_buffer_desc&);
@@ -478,43 +537,62 @@ class GSSDataBuffer
     void gss_buff_clear();
     size_t gss_buff_getsize() const { return m_gss_buffer.length; }
     bool is_it_empty() const { return !gss_buff_getsize(); }
-    void gss_buff_resize(size_t gss_buff_size);
+    void gss_buff_resize(size_t);
 
     std::string get_string() const
     { return std::string((char*) m_gss_buffer.value, m_gss_buffer.length); }
 
     const char* get_bytes() const { return ((char*) m_gss_buffer.value); }
-    const gss_buffer_desc_struct* get_raw_buffer() const { return &m_gss_buffer; }
+    const gss_buffer_desc_struct* get_raw_buffer() const
+    { return &m_gss_buffer; }
+
     gss_buffer_desc_struct* get_raw_buffer() { return &m_gss_buffer; }
 
-    explicit operator std::string() const { return get_string(); }
-    explicit operator const char*() const { return get_bytes(); }
-    explicit operator const gss_buffer_desc_struct*() const { return &m_gss_buffer; }
-    explicit operator gss_buffer_desc_struct*() { return &m_gss_buffer; }
-    explicit operator void*() { return m_gss_buffer.value; }
+    /*explicit*/ operator const char*() const { return get_bytes(); }
+    /*explicit*/ operator std::string() const { return get_string(); }
 
-    GSSDataBuffer& operator+ (const GSSDataBuffer& gss_buff);
+    /*explicit*/ operator const gss_buffer_desc_struct*() const
+    { return &m_gss_buffer; }
+
+    /*explicit*/ operator gss_buffer_desc_struct*()
+    { return &m_gss_buffer; }
+
+    /*explicit*/ operator void*()
+    { return m_gss_buffer.value; }
+
+    GSSDataBuffer& operator+ (const GSSDataBuffer&);
 
     template <typename T>
-    GSSDataBuffer& operator+ (const T& other) { return (*this + GSSDataBuffer((void*) &other, sizeof(T))); }
+    GSSDataBuffer& operator+ (const T& other)
+    { return (*this + GSSDataBuffer((void*) &other, sizeof(T))); }
 
     template <typename T>
-    GSSDataBuffer& operator+ (const T* other) { return (*this + GSSDataBuffer((void*) other, sizeof(T))); }
+    GSSDataBuffer& operator+ (const T* other)
+    { return (*this + GSSDataBuffer((void*) other, sizeof(T))); }
 
     GSSDataBuffer& operator+= (const GSSDataBuffer& other);
 
     template <typename T>
-    GSSDataBuffer& operator+= (const T& other) { return (*this += GSSDataBuffer((void*) &other, sizeof(T))); }
+    GSSDataBuffer& operator+= (const T& other)
+    { return (*this += GSSDataBuffer((void*) &other, sizeof(T))); }
 
     template <typename T>
-    GSSDataBuffer& operator+= (const T* other) { return (*this += GSSDataBuffer((void*) other, sizeof(T))); }
+    GSSDataBuffer& operator+= (const T* other)
+    { return (*this += GSSDataBuffer((void*) other, sizeof(T))); }
 
     /*
     template <typename T>
-    T get_value() { assert(sizeof(T) <= m_gss_buffer.length); return (*(T*) m_gss_buffer.value); }
+    T get_value() {
+      assert(sizeof(T) <= m_gss_buffer.length);
+      return (*(T*) m_gss_buffer.value);
+    }
 
     template <typename T>
-    T& get_value(T& value) { assert(sizeof(T) <= m_gss_buffer.length); value = (*(T*) m_gss_buffer.value); return value; }
+    T& get_value(T& value) {
+      assert(sizeof(T) <= m_gss_buffer.length);
+      value = (*(T*) m_gss_buffer.value);
+      return value;
+    }
     */
 
   private:
@@ -526,43 +604,64 @@ class GSSDataBuffer
 
 /*  GSSMechanismBase Operators.
 */
-std::ostream& operator<< (std::ostream& out_stream, const gss_client_auth::GSSMechanismBase& gss_mechanism);
+std::ostream& operator<< (std::ostream&,
+                          const gss_client_auth::GSSMechanismBase&);
 
 
 /*  GSSNameType Operators.
 */
-bool operator== (const std::string& lhs, const gss_client_auth::GSSNameType& rhs);
-bool operator!= (const std::string& lhs, const gss_client_auth::GSSNameType& rhs);
-std::ostream& operator<< (std::ostream& out_stream, const gss_client_auth::GSSNameType& gss_type);
+bool operator== (const std::string&, const gss_client_auth::GSSNameType&);
+bool operator!= (const std::string&, const gss_client_auth::GSSNameType&);
+std::ostream& operator<< (std::ostream&,
+                          const gss_client_auth::GSSNameType&);
 
 
 /*  GSSDataBuffer Operators.
 */
-bool operator== (const gss_client_auth::GSSDataBuffer& lhs, const gss_client_auth::GSSDataBuffer& rhs);
-bool operator== (const gss_client_auth::GSSDataBuffer& lhs, const gss_buffer_desc& rhs);
-bool operator== (const gss_buffer_desc& lhs, const gss_client_auth::GSSDataBuffer& rhs);
+bool operator== (const gss_client_auth::GSSDataBuffer&,
+                 const gss_client_auth::GSSDataBuffer&);
+bool operator== (const gss_client_auth::GSSDataBuffer&,
+                 const gss_buffer_desc&);
+bool operator== (const gss_buffer_desc&,
+                 const gss_client_auth::GSSDataBuffer&);
 
-bool operator!= (const gss_client_auth::GSSDataBuffer& lhs, const gss_client_auth::GSSDataBuffer& rhs);
-bool operator!= (const gss_client_auth::GSSDataBuffer& lhs, const gss_buffer_desc& rhs);
-bool operator!= (const gss_buffer_desc& lhs, const gss_client_auth::GSSDataBuffer& rhs);
+bool operator!= (const gss_client_auth::GSSDataBuffer&,
+                 const gss_client_auth::GSSDataBuffer&);
+bool operator!= (const gss_client_auth::GSSDataBuffer&,
+                 const gss_buffer_desc&);
+bool operator!= (const gss_buffer_desc&,
+                 const gss_client_auth::GSSDataBuffer&);
 
-bool operator< (const gss_client_auth::GSSDataBuffer& lhs, const gss_client_auth::GSSDataBuffer& rhs);
-bool operator< (const gss_client_auth::GSSDataBuffer& lhs, const gss_buffer_desc& rhs);
-bool operator< (const gss_buffer_desc& lhs, const gss_client_auth::GSSDataBuffer& rhs);
+bool operator< (const gss_client_auth::GSSDataBuffer&,
+                const gss_client_auth::GSSDataBuffer&);
+bool operator< (const gss_client_auth::GSSDataBuffer&,
+                const gss_buffer_desc&);
+bool operator< (const gss_buffer_desc&,
+                const gss_client_auth::GSSDataBuffer&);
 
-bool operator> (const gss_client_auth::GSSDataBuffer& lhs, const gss_client_auth::GSSDataBuffer& rhs);
-bool operator> (const gss_client_auth::GSSDataBuffer& lhs, const gss_buffer_desc& rhs);
-bool operator> (const gss_buffer_desc& lhs, const gss_client_auth::GSSDataBuffer& rhs);
+bool operator> (const gss_client_auth::GSSDataBuffer&,
+                const gss_client_auth::GSSDataBuffer&);
+bool operator> (const gss_client_auth::GSSDataBuffer&,
+                const gss_buffer_desc&);
+bool operator> (const gss_buffer_desc&,
+                const gss_client_auth::GSSDataBuffer&);
 
-bool operator<= (const gss_client_auth::GSSDataBuffer& lhs, const gss_client_auth::GSSDataBuffer& rhs);
-bool operator<= (const gss_client_auth::GSSDataBuffer& lhs, const gss_buffer_desc& rhs);
-bool operator<= (const gss_buffer_desc& lhs, const gss_client_auth::GSSDataBuffer& rhs);
+bool operator<= (const gss_client_auth::GSSDataBuffer&,
+                 const gss_client_auth::GSSDataBuffer&);
+bool operator<= (const gss_client_auth::GSSDataBuffer&,
+                 const gss_buffer_desc&);
+bool operator<= (const gss_buffer_desc&,
+                 const gss_client_auth::GSSDataBuffer&);
 
-bool operator>= (const gss_client_auth::GSSDataBuffer& lhs, const gss_client_auth::GSSDataBuffer& rhs);
-bool operator>= (const gss_client_auth::GSSDataBuffer& lhs, const gss_buffer_desc& rhs);
+bool operator>= (const gss_client_auth::GSSDataBuffer&,
+                 const gss_client_auth::GSSDataBuffer&);
+bool operator>= (const gss_client_auth::GSSDataBuffer&,
+                 const gss_buffer_desc&);
 
-std::ostream& operator<< (std::ostream& out_stream, const gss_client_auth::GSSDataBuffer& gss_buff);
-std::istream& operator>> (std::istream& in_stream, gss_client_auth::GSSDataBuffer& gss_buff);
+std::ostream& operator<< (std::ostream&,
+                          const gss_client_auth::GSSDataBuffer&);
+std::istream& operator>> (std::istream& ,
+                          gss_client_auth::GSSDataBuffer&);
 
 
 #endif    //-- GSS_AUTH_MECHANISM_HPP

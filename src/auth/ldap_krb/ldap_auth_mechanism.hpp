@@ -15,7 +15,19 @@
 #ifndef LDAP_AUTH_MECHANISM_HPP
 #define LDAP_AUTH_MECHANISM_HPP
 
+/* Include order and names:
+ * a) Immediate related header
+ * b) C libraries (if any),
+ * c) C++ libraries,
+ * d) Other support libraries
+ * e) Other project's support libraries
+ *
+ * Within each section the includes should
+ * be ordered alphabetically.
+ */
+
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <iterator>
 #include <map>
@@ -283,7 +295,7 @@ class LDAPBasicEncodeRuleValue : public berval
 
   public:
     LDAPBasicEncodeRuleValue() {
-      bv_len = ldap_utils::ZERO;
+      bv_len = common_utils::ZERO;
       bv_val = nullptr;
     };
     LDAPBasicEncodeRuleValue(const std::string& ldap_value) :
@@ -309,7 +321,7 @@ class LDAPBasicEncodeRuleValue : public berval
       if (bv_val) {
         delete[] bv_val;
       }
-      bv_len = ldap_utils::ZERO;
+      bv_len = common_utils::ZERO;
       bv_val = nullptr;
     };
 
