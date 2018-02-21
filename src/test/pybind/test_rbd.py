@@ -518,6 +518,7 @@ class TestImage(object):
             copy.remove_snap('snap1')
         self.rbd.remove(ioctx, dst_name)
 
+    @require_features([RBD_FEATURE_LAYERING])
     def test_deep_copy_clone(self):
         global ioctx
         global features
@@ -1040,8 +1041,10 @@ class TestClone(object):
         self.image.create_snap('snap2')
         global features
         clone_name2 = get_temp_image_name()
+        rados.conf_set("rbd_default_clone_format", "1")
         assert_raises(InvalidArgument, self.rbd.clone, ioctx, image_name,
                       'snap2', ioctx, clone_name2, features)
+        rados.conf_set("rbd_default_clone_format", "auto")
         self.image.remove_snap('snap2')
 
     def test_unprotect_with_children(self):
@@ -1064,8 +1067,10 @@ class TestClone(object):
 
         # ...with a clone of the same parent
         other_clone_name = get_temp_image_name()
+        rados.conf_set("rbd_default_clone_format", "1")
         self.rbd.clone(ioctx, image_name, 'snap1', other_ioctx,
                        other_clone_name, features)
+        rados.conf_set("rbd_default_clone_format", "auto")
         self.other_clone = Image(other_ioctx, other_clone_name)
         # validate its parent info
         (pool, image, snap) = self.other_clone.parent_info()

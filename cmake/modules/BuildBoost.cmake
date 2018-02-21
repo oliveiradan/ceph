@@ -91,11 +91,13 @@ function(do_build_boost version)
     " : ${CMAKE_CXX_COMPILER}"
     " ;\n")
   if(with_python GREATER -1)
+    set(python_ver ${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR})
+    string(REPLACE ";" " " python_includes "${PYTHON_INCLUDE_DIRS}")
     file(APPEND ${user_config}
       "using python"
       " : ${python_ver}"
       " : ${PYTHON_EXECUTABLE}"
-      " : ${PYTHON_INCLUDE_DIRS}"
+      " : ${python_includes}"
       " : ${PYTHON_LIBRARIES}"
       " ;\n")
   endif()
@@ -107,7 +109,6 @@ function(do_build_boost version)
       message(FATAL_ERROR "Please call find_package(PythonLibs) first for building "
         "Boost.Python")
     endif()
-    set(python_ver ${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR})
     list(APPEND b2 python=${python_ver})
   endif()
 
@@ -142,7 +143,7 @@ function(do_build_boost version)
     set(source_dir
       URL ${boost_url}
       URL_MD5 ${boost_md5})
-    if(CMAKE_VERSION VERSION_GREATER 3.0)
+    if(CMAKE_VERSION VERSION_GREATER 3.1)
       list(APPEND source_dir DOWNLOAD_NO_PROGRESS 1)
     endif()
   endif()

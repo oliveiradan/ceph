@@ -72,6 +72,7 @@ rgw_http_errors rgw_http_s3_errors({
     { ERR_TOO_MANY_BUCKETS, {400, "TooManyBuckets" }},
     { ERR_MALFORMED_XML, {400, "MalformedXML" }},
     { ERR_AMZ_CONTENT_SHA256_MISMATCH, {400, "XAmzContentSHA256Mismatch" }},
+    { ERR_MALFORMED_DOC, {400, "MalformedPolicyDocument"}},
     { ERR_INVALID_TAG, {400, "InvalidTag"}},
     { ERR_MALFORMED_ACL_ERROR, {400, "MalformedACLError" }},
     { ERR_INVALID_ENCRYPTION_ALGORITHM, {400, "InvalidEncryptionAlgorithmError" }},
@@ -91,6 +92,7 @@ rgw_http_errors rgw_http_s3_errors({
     { ERR_NO_SUCH_LC, {404, "NoSuchLifecycleConfiguration"}},
     { ERR_NO_SUCH_BUCKET_POLICY, {404, "NoSuchBucketPolicy"}},
     { ERR_NO_SUCH_USER, {404, "NoSuchUser"}},
+    { ERR_NO_ROLE_FOUND, {404, "NoSuchEntity"}},
     { ERR_NO_SUCH_SUBUSER, {404, "NoSuchSubUser"}},
     { ERR_METHOD_NOT_ALLOWED, {405, "MethodNotAllowed" }},
     { ETIMEDOUT, {408, "RequestTimeout" }},
@@ -99,6 +101,8 @@ rgw_http_errors rgw_http_s3_errors({
     { ERR_EMAIL_EXIST, {409, "EmailExists" }},
     { ERR_KEY_EXIST, {409, "KeyExists"}},
     { ERR_TAG_CONFLICT, {409, "OperationAborted"}},
+    { ERR_ROLE_EXISTS, {409, "EntityAlreadyExists"}},
+    { ERR_DELETE_CONFLICT, {409, "DeleteConflict"}},
     { ERR_INVALID_SECRET_KEY, {400, "InvalidSecretKey"}},
     { ERR_INVALID_KEY_TYPE, {400, "InvalidKeyType"}},
     { ERR_INVALID_CAP, {400, "InvalidCapability"}},
@@ -134,6 +138,10 @@ rgw_http_errors rgw_http_swift_errors({
 int rgw_perf_start(CephContext *cct)
 {
   PerfCountersBuilder plb(cct, cct->_conf->name.to_str(), l_rgw_first, l_rgw_last);
+
+  // RGW emits comparatively few metrics, so let's be generous
+  // and mark them all USEFUL to get transmission to ceph-mgr by default.
+  plb.set_prio_default(PerfCountersBuilder::PRIO_USEFUL);
 
   plb.add_u64_counter(l_rgw_req, "req", "Requests");
   plb.add_u64_counter(l_rgw_failed_req, "failed_req", "Aborted requests");
@@ -1734,7 +1742,8 @@ bool RGWUserCaps::is_valid_cap_type(const string& tp)
                                     "bilog",
                                     "mdlog",
                                     "datalog",
-                                    "opstate" };
+                                    "opstate",
+                                    "roles"};
 
   for (unsigned int i = 0; i < sizeof(cap_type) / sizeof(char *); ++i) {
     if (tp.compare(cap_type[i]) == 0) {

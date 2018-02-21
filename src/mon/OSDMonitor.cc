@@ -644,7 +644,8 @@ void OSDMonitor::create_pending()
 }
 
 creating_pgs_t
-OSDMonitor::update_pending_pgs(const OSDMap::Incremental& inc)
+OSDMonitor::update_pending_pgs(const OSDMap::Incremental& inc,
+			       const OSDMap& nextmap)
 {
   dout(10) << __func__ << dendl;
   creating_pgs_t pending_creatings;
@@ -685,6 +686,20 @@ OSDMonitor::update_pending_pgs(const OSDMap::Incremental& inc)
     dout(10) << __func__ << " " << removed
 	     << " pgs removed because they're created" << dendl;
     pending_creatings.last_scan_epoch = osdmap.get_epoch();
+  }
+
+  // filter out any pgs that shouldn't exist.
+  {
+    auto i = pending_creatings.pgs.begin();
+    while (i != pending_creatings.pgs.end()) {
+      if (!nextmap.pg_exists(i->first)) {
+	dout(10) << __func__ << " removing pg " << i->first
+		 << " which should not exist" << dendl;
+	i = pending_creatings.pgs.erase(i);
+      } else {
+	++i;
+      }
+    }
   }
 
   // process queue
@@ -1288,7 +1303,7 @@ void OSDMonitor::encode_pending(MonitorDBStore::TransactionRef t)
   pending_metadata_rm.clear();
 
   // and pg creating, also!
-  auto pending_creatings = update_pending_pgs(pending_inc);
+  auto pending_creatings = update_pending_pgs(pending_inc, tmp);
   bufferlist creatings_bl;
   encode(pending_creatings, creatings_bl);
   t->put(OSD_PG_CREATING_PREFIX, "creating", creatings_bl);
@@ -1329,23 +1344,6 @@ void OSDMonitor::encode_pending(MonitorDBStore::TransactionRef t)
   health_check_map_t next;
   tmp.check_health(&next);
   encode_health(next, t);
-}
-
-void OSDMonitor::trim_creating_pgs(creating_pgs_t* creating_pgs,
-				   const ceph::unordered_map<pg_t,pg_stat_t>& pg_stat)
-{
-  auto p = creating_pgs->pgs.begin();
-  while (p != creating_pgs->pgs.end()) {
-    auto q = pg_stat.find(p->first);
-    if (q != pg_stat.end() &&
-	!(q->second.state & PG_STATE_CREATING)) {
-      dout(20) << __func__ << " pgmap shows " << p->first << " is created"
-	       << dendl;
-      p = creating_pgs->pgs.erase(p);
-    } else {
-      ++p;
-    }
-  }
 }
 
 int OSDMonitor::load_metadata(int osd, map<string, string>& m, ostream *err)
@@ -3282,6 +3280,11 @@ void OSDMonitor::update_creating_pgs()
   for (const auto& pg : creating_pgs.pgs) {
     int acting_primary = -1;
     auto pgid = pg.first;
+    if (!osdmap.pg_exists(pgid)) {
+      dout(20) << __func__ << " ignoring " << pgid << " which should not exist"
+	       << dendl;
+      continue;
+    }
     auto mapped = pg.second.first;
     dout(20) << __func__ << " looking up " << pgid << "@" << mapped << dendl;
     mapping.get(pgid, nullptr, nullptr, nullptr, &acting_primary);
@@ -3600,7 +3603,7 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
   bufferlist rdata;
   stringstream ss, ds;
 
-  map<string, cmd_vartype> cmdmap;
+  cmdmap_t cmdmap;
   if (!cmdmap_from_json(m->cmd, &cmdmap, ss)) {
     string rs = ss.str();
     mon->reply_command(op, -EINVAL, rs, get_last_committed());
@@ -3621,7 +3624,7 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
   boost::scoped_ptr<Formatter> f(Formatter::create(format));
 
   if (prefix == "osd stat") {
-    osdmap.print_summary(f.get(), ds, "");
+    osdmap.print_summary(f.get(), ds, "", true);
     if (f)
       f->flush(rdata);
     else
@@ -5892,7 +5895,7 @@ bool OSDMonitor::prepare_unset_flag(MonOpRequestRef op, int flag)
   return true;
 }
 
-int OSDMonitor::prepare_command_pool_set(map<string,cmd_vartype> &cmdmap,
+int OSDMonitor::prepare_command_pool_set(const cmdmap_t& cmdmap,
                                          stringstream& ss)
 {
   string poolstr;
@@ -6379,7 +6382,7 @@ int OSDMonitor::prepare_command_pool_set(map<string,cmd_vartype> &cmdmap,
 }
 
 int OSDMonitor::prepare_command_pool_application(const string &prefix,
-                                                 map<string,cmd_vartype> &cmdmap,
+                                                 const cmdmap_t& cmdmap,
                                                  stringstream& ss)
 {
   string pool_name;
@@ -6626,6 +6629,7 @@ int32_t OSDMonitor::_allocate_osd_id(int32_t* existing_id)
 void OSDMonitor::do_osd_create(
     const int32_t id,
     const uuid_d& uuid,
+    const string& device_class,
     int32_t* new_id)
 {
   dout(10) << __func__ << " uuid " << uuid << dendl;
@@ -6659,7 +6663,6 @@ void OSDMonitor::do_osd_create(
     assert(allocated_id < 0);
     pending_inc.new_weight[existing_id] = CEPH_OSD_OUT;
     *new_id = existing_id;
-
   } else if (allocated_id >= 0) {
     assert(existing_id < 0);
     // raise max_osd
@@ -6675,6 +6678,33 @@ void OSDMonitor::do_osd_create(
   }
 
 out:
+  if (device_class.size()) {
+    CrushWrapper newcrush;
+    _get_pending_crush(newcrush);
+    if (newcrush.get_max_devices() < *new_id + 1) {
+      newcrush.set_max_devices(*new_id + 1);
+    }
+    string name = string("osd.") + stringify(*new_id);
+    if (!newcrush.item_exists(*new_id)) {
+      newcrush.set_item_name(*new_id, name);
+    }
+    ostringstream ss;
+    int r = newcrush.update_device_class(*new_id, device_class, name, &ss);
+    if (r < 0) {
+      derr << __func__ << " failed to set " << name << " device_class "
+	   << device_class << ": " << cpp_strerror(r) << " - " << ss.str()
+	   << dendl;
+      // non-fatal... this might be a replay and we want to be idempotent.
+    } else {
+      dout(20) << __func__ << " set " << name << " device_class " << device_class
+	       << dendl;
+      pending_inc.crush.clear();
+      newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
+    }
+  } else {
+    dout(20) << __func__ << " no device_class" << dendl;
+  }
+
   dout(10) << __func__ << " using id " << *new_id << dendl;
   if (osdmap.get_max_osd() <= *new_id && pending_inc.new_max_osd <= *new_id) {
     pending_inc.new_max_osd = *new_id + 1;
@@ -6779,8 +6809,8 @@ int OSDMonitor::prepare_command_osd_create(
 
 int OSDMonitor::prepare_command_osd_new(
     MonOpRequestRef op,
-    const map<string,cmd_vartype>& cmdmap,
-    const map<string,string>& secrets,
+    const cmdmap_t& cmdmap,
+    const map<string,string>& params,
     stringstream &ss,
     Formatter *f)
 {
@@ -6889,9 +6919,9 @@ int OSDMonitor::prepare_command_osd_new(
 
   dout(10) << __func__ << " id " << id << " uuid " << uuid << dendl;
 
-  if (may_be_idempotent && secrets.empty()) {
+  if (may_be_idempotent && params.empty()) {
     // nothing to do, really.
-    dout(10) << __func__ << " idempotent and no secrets -- no op." << dendl;
+    dout(10) << __func__ << " idempotent and no params -- no op." << dendl;
     assert(id >= 0);
     if (f) {
       f->open_object_section("created_osd");
@@ -6903,30 +6933,38 @@ int OSDMonitor::prepare_command_osd_new(
     return EEXIST;
   }
 
+  string device_class;
+  auto p = params.find("crush_device_class");
+  if (p != params.end()) {
+    device_class = p->second;
+    dout(20) << __func__ << " device_class will be " << device_class << dendl;
+  }
   string cephx_secret, lockbox_secret, dmcrypt_key;
   bool has_lockbox = false;
-  bool has_secrets = (!secrets.empty());
+  bool has_secrets = params.count("cephx_secret")
+    || params.count("cephx_lockbox_secret")
+    || params.count("dmcrypt_key");
 
   ConfigKeyService *svc = nullptr;
   AuthMonitor::auth_entity_t cephx_entity, lockbox_entity;
 
   if (has_secrets) {
-    if (secrets.count("cephx_secret") == 0) {
+    if (params.count("cephx_secret") == 0) {
       ss << "requires a cephx secret.";
       return -EINVAL;
     }
-    cephx_secret = secrets.at("cephx_secret");
+    cephx_secret = params.at("cephx_secret");
 
-    bool has_lockbox_secret = (secrets.count("cephx_lockbox_secret") > 0);
-    bool has_dmcrypt_key = (secrets.count("dmcrypt_key") > 0);
+    bool has_lockbox_secret = (params.count("cephx_lockbox_secret") > 0);
+    bool has_dmcrypt_key = (params.count("dmcrypt_key") > 0);
 
     dout(10) << __func__ << " has lockbox " << has_lockbox_secret
              << " dmcrypt " << has_dmcrypt_key << dendl;
 
     if (has_lockbox_secret && has_dmcrypt_key) {
       has_lockbox = true;
-      lockbox_secret = secrets.at("cephx_lockbox_secret");
-      dmcrypt_key = secrets.at("dmcrypt_key");
+      lockbox_secret = params.at("cephx_lockbox_secret");
+      dmcrypt_key = params.at("dmcrypt_key");
     } else if (!has_lockbox_secret != !has_dmcrypt_key) {
       ss << "requires both a cephx lockbox secret and a dm-crypt key.";
       return -EINVAL;
@@ -7015,7 +7053,7 @@ int OSDMonitor::prepare_command_osd_new(
   } else {
     assert(id >= 0);
     int32_t new_id = -1;
-    do_osd_create(id, uuid, &new_id);
+    do_osd_create(id, uuid, device_class, &new_id);
     assert(new_id >= 0);
     assert(id == new_id);
   }
@@ -7036,7 +7074,7 @@ bool OSDMonitor::prepare_command(MonOpRequestRef op)
   op->mark_osdmon_event(__func__);
   MMonCommand *m = static_cast<MMonCommand*>(op->get_req());
   stringstream ss;
-  map<string, cmd_vartype> cmdmap;
+  cmdmap_t cmdmap;
   if (!cmdmap_from_json(m->cmd, &cmdmap, ss)) {
     string rs = ss.str();
     mon->reply_command(op, -EINVAL, rs, get_last_committed());
@@ -7053,7 +7091,7 @@ bool OSDMonitor::prepare_command(MonOpRequestRef op)
 }
 
 static int parse_reweights(CephContext *cct,
-			   const map<string,cmd_vartype> &cmdmap,
+			   const cmdmap_t& cmdmap,
 			   const OSDMap& osdmap,
 			   map<int32_t, uint32_t>* weights)
 {
@@ -7230,7 +7268,7 @@ int OSDMonitor::prepare_command_osd_purge(
 }
 
 bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
-				      map<string,cmd_vartype> &cmdmap)
+				      const cmdmap_t& cmdmap)
 {
   op->mark_osdmon_event(__func__);
   MMonCommand *m = static_cast<MMonCommand*>(op->get_req());
@@ -7440,6 +7478,9 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
         oss << "osd." << osd;
         string name = oss.str();
 
+	if (newcrush.get_max_devices() < osd + 1) {
+	  newcrush.set_max_devices(osd + 1);
+	}
         string action;
         if (newcrush.item_exists(osd)) {
           action = "updating";
@@ -7805,7 +7846,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     double weight;
     if (!cmd_getval(cct, cmdmap, "weight", weight)) {
       ss << "unable to parse weight value '"
-         << cmd_vartype_stringify(cmdmap["weight"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("weight")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -7874,7 +7915,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       double weight;
       if (!cmd_getval(cct, cmdmap, "weight", weight)) {
         ss << "unable to parse weight value '"
-           << cmd_vartype_stringify(cmdmap["weight"]) << "'";
+           << cmd_vartype_stringify(cmdmap.at("weight")) << "'";
         err = -EINVAL;
         goto reply;
       }
@@ -8150,7 +8191,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     double w;
     if (!cmd_getval(cct, cmdmap, "weight", w)) {
       ss << "unable to parse weight value '"
-	 << cmd_vartype_stringify(cmdmap["weight"]) << "'";
+	 << cmd_vartype_stringify(cmdmap.at("weight")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -8188,7 +8229,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     double w;
     if (!cmd_getval(cct, cmdmap, "weight", w)) {
       ss << "unable to parse weight value '"
-	 << cmd_vartype_stringify(cmdmap["weight"]) << "'";
+	 << cmd_vartype_stringify(cmdmap.at("weight")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -8254,7 +8295,8 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     int64_t value = -1;
     if (!cmd_getval(cct, cmdmap, "value", value)) {
       err = -EINVAL;
-      ss << "failed to parse integer value " << cmd_vartype_stringify(cmdmap["value"]);
+      ss << "failed to parse integer value "
+	 << cmd_vartype_stringify(cmdmap.at("value"));
       goto reply;
     }
 
@@ -8607,7 +8649,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     int64_t newmax;
     if (!cmd_getval(cct, cmdmap, "newmax", newmax)) {
       ss << "unable to parse 'newmax' value '"
-         << cmd_vartype_stringify(cmdmap["newmax"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("newmax")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -8649,7 +8691,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     double n;
     if (!cmd_getval(cct, cmdmap, "ratio", n)) {
       ss << "unable to parse 'ratio' value '"
-         << cmd_vartype_stringify(cmdmap["ratio"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("ratio")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -9352,7 +9394,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     string pgidstr;
     if (!cmd_getval(cct, cmdmap, "pgid", pgidstr)) {
       ss << "unable to parse 'pgid' value '"
-         << cmd_vartype_stringify(cmdmap["pgid"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("pgid")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -9414,7 +9456,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     string pgidstr;
     if (!cmd_getval(cct, cmdmap, "pgid", pgidstr)) {
       ss << "unable to parse 'pgid' value '"
-         << cmd_vartype_stringify(cmdmap["pgid"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("pgid")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -9433,7 +9475,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     int64_t osd;
     if (!cmd_getval(cct, cmdmap, "id", osd)) {
       ss << "unable to parse 'id' value '"
-         << cmd_vartype_stringify(cmdmap["id"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("id")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -9476,7 +9518,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     string pgidstr;
     if (!cmd_getval(cct, cmdmap, "pgid", pgidstr)) {
       ss << "unable to parse 'pgid' value '"
-         << cmd_vartype_stringify(cmdmap["pgid"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("pgid")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -9543,7 +9585,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
         vector<int64_t> id_vec;
         if (!cmd_getval(cct, cmdmap, "id", id_vec)) {
           ss << "unable to parse 'id' value(s) '"
-             << cmd_vartype_stringify(cmdmap["id"]) << "'";
+             << cmd_vartype_stringify(cmdmap.at("id")) << "'";
           err = -EINVAL;
           goto reply;
         }
@@ -9603,7 +9645,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
         vector<int64_t> id_vec;
         if (!cmd_getval(cct, cmdmap, "id", id_vec)) {
           ss << "unable to parse 'id' value(s) '"
-             << cmd_vartype_stringify(cmdmap["id"]) << "'";
+             << cmd_vartype_stringify(cmdmap.at("id")) << "'";
           err = -EINVAL;
           goto reply;
         }
@@ -9685,14 +9727,14 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     int64_t id;
     if (!cmd_getval(cct, cmdmap, "id", id)) {
       ss << "invalid osd id value '"
-         << cmd_vartype_stringify(cmdmap["id"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("id")) << "'";
       err = -EINVAL;
       goto reply;
     }
     double w;
     if (!cmd_getval(cct, cmdmap, "weight", w)) {
       ss << "unable to parse 'weight' value '"
-           << cmd_vartype_stringify(cmdmap["weight"]) << "'";
+	 << cmd_vartype_stringify(cmdmap.at("weight")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -9726,14 +9768,14 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     int64_t id;
     if (!cmd_getval(cct, cmdmap, "id", id)) {
       ss << "unable to parse osd id value '"
-         << cmd_vartype_stringify(cmdmap["id"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("id")) << "'";
       err = -EINVAL;
       goto reply;
     }
     double w;
     if (!cmd_getval(cct, cmdmap, "weight", w)) {
       ss << "unable to parse weight value '"
-         << cmd_vartype_stringify(cmdmap["weight"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("weight")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -9760,7 +9802,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     err = parse_reweights(cct, cmdmap, osdmap, &weights);
     if (err) {
       ss << "unable to parse 'weights' value '"
-         << cmd_vartype_stringify(cmdmap["weights"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("weights")) << "'";
       goto reply;
     }
     pending_inc.new_weight.insert(weights.begin(), weights.end());
@@ -9772,7 +9814,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     int64_t id;
     if (!cmd_getval(cct, cmdmap, "id", id)) {
       ss << "unable to parse osd id value '"
-         << cmd_vartype_stringify(cmdmap["id"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("id")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -9824,7 +9866,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     int64_t id;
     if (!cmd_getval(cct, cmdmap, "id", id)) {
       ss << "unable to parse osd id value '"
-         << cmd_vartype_stringify(cmdmap["id"]) << "";
+         << cmd_vartype_stringify(cmdmap.at("id")) << "";
       err = -EINVAL;
       goto reply;
     }
@@ -9899,20 +9941,20 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       return false;
     }
 
-    map<string,string> secrets_map;
+    map<string,string> param_map;
 
     bufferlist bl = m->get_data();
-    string secrets_json = bl.to_str();
-    dout(20) << __func__ << " osd new json = " << secrets_json << dendl;
+    string param_json = bl.to_str();
+    dout(20) << __func__ << " osd new json = " << param_json << dendl;
 
-    err = get_json_str_map(secrets_json, ss, &secrets_map);
+    err = get_json_str_map(param_json, ss, &param_map);
     if (err < 0)
       goto reply;
 
-    dout(20) << __func__ << " osd new secrets " << secrets_map << dendl;
+    dout(20) << __func__ << " osd new params " << param_map << dendl;
 
     paxos->plug();
-    err = prepare_command_osd_new(op, cmdmap, secrets_map, ss, f.get());
+    err = prepare_command_osd_new(op, cmdmap, param_map, ss, f.get());
     paxos->unplug();
 
     if (err < 0) {
@@ -9988,7 +10030,8 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       goto reply;
     }
 
-    do_osd_create(id, uuid, &new_id);
+    string empty_device_class;
+    do_osd_create(id, uuid, empty_device_class, &new_id);
 
     if (f) {
       f->open_object_section("created_osd");
@@ -10800,7 +10843,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     int64_t size = 0;
     if (!cmd_getval(cct, cmdmap, "size", size)) {
       ss << "unable to parse 'size' value '"
-         << cmd_vartype_stringify(cmdmap["size"]) << "'";
+         << cmd_vartype_stringify(cmdmap.at("size")) << "'";
       err = -EINVAL;
       goto reply;
     }
@@ -10925,6 +10968,11 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     if (!pgid.parse(pgidstr.c_str())) {
       ss << "invalid pgid '" << pgidstr << "'";
       err = -EINVAL;
+      goto reply;
+    }
+    if (!osdmap.pg_exists(pgid)) {
+      ss << "pg " << pgid << " should not exist";
+      err = -ENOENT;
       goto reply;
     }
     bool creating_now;
@@ -11344,10 +11392,13 @@ bool OSDMonitor::_check_remove_tier(
   // Apply CephFS-specific checks
   const FSMap &pending_fsmap = mon->mdsmon()->get_pending();
   if (pending_fsmap.pool_in_use(base_pool_id)) {
-    if (base_pool->type != pg_pool_t::TYPE_REPLICATED) {
-      // If the underlying pool is erasure coded, we can't permit the
-      // removal of the replicated tier that CephFS relies on to access it
-      *ss << "pool '" << base_pool_name << "' is in use by CephFS via its tier";
+    if (base_pool->is_erasure() && !base_pool->allows_ecoverwrites()) {
+      // If the underlying pool is erasure coded and does not allow EC
+      // overwrites, we can't permit the removal of the replicated tier that
+      // CephFS relies on to access it
+      *ss << "pool '" << base_pool_name <<
+          "' does not allow EC overwrites and is in use by CephFS"
+          " via its tier";
       *err = -EBUSY;
       return false;
     }

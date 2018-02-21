@@ -3733,9 +3733,12 @@ std::vector<Option> get_global_options() {
     .set_default(.99)
     .set_description("Ratio of bluestore cache to devote to kv database (rocksdb)"),
 
-    Option("bluestore_cache_kv_max", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    Option("bluestore_cache_kv_max", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(512_M)
-    .set_description("Max memory (bytes) to devote to kv database (rocksdb)"),
+    .set_description("Max memory (bytes) to devote to kv database (rocksdb)")
+    .set_long_description("A negative value means using bluestore_cache_meta_ratio "
+      "and bluestore_cache_kv_ratio instead of calculating these ratios using "
+      "bluestore_cache_size_* and bluestore_cache_kv_max."),
 
     Option("bluestore_kvbackend", Option::TYPE_STR, Option::LEVEL_DEV)
     .set_default("rocksdb")
@@ -5999,6 +6002,22 @@ static std::vector<Option> get_rbd_options() {
     .set_default("")
     .set_description("default krbd map options"),
 
+    Option("rbd_default_clone_format", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_enum_allowed({"1", "2", "auto"})
+    .set_default("auto")
+    .set_description("default internal format for handling clones")
+    .set_long_description("This sets the internal format for tracking cloned "
+                          "images. The setting of '1' requires attaching to "
+                          "protected snapshots that cannot be removed until "
+                          "the clone is removed/flattened. The setting of '2' "
+                          "will allow clones to be attached to any snapshot "
+                          "and permits removing in-use parent snapshots but "
+                          "requires Mimic or later clients. The default "
+                          "setting of 'auto' will use the v2 format if the "
+                          "cluster is configured to require mimic or later "
+                          "clients.")
+    .set_safe(),
+
     Option("rbd_journal_order", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_min(12)
     .set_default(24)
@@ -6560,9 +6579,12 @@ std::vector<Option> get_mds_options() {
     .set_default(100)
     .set_description("minimum number of capabilities a client may hold"),
 
-    Option("mds_max_ratio_caps_per_client", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
+    Option("mds_max_ratio_caps_per_client", Option::TYPE_FLOAT, Option::LEVEL_DEV)
     .set_default(.8)
     .set_description("maximum ratio of current caps that may be recalled during MDS cache pressure"),
+    Option("mds_hack_allow_loading_invalid_metadata", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+     .set_default(0)
+     .set_description("INTENTIONALLY CAUSE DATA LOSS by bypasing checks for invalid metadata on disk. Allows testing repair tools."),
   });
 }
 

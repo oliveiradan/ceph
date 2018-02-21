@@ -59,16 +59,6 @@ class PG_RecoveryQueueAsync : public Context {
 };
 }
 
-struct ReplicatedBackend::C_OSD_RepModifyApply : public Context {
-  ReplicatedBackend *pg;
-  RepModifyRef rm;
-  C_OSD_RepModifyApply(ReplicatedBackend *pg, RepModifyRef r)
-    : pg(pg), rm(r) {}
-  void finish(int r) override {
-    pg->repop_applied(rm);
-  }
-};
-
 struct ReplicatedBackend::C_OSD_RepModifyCommit : public Context {
   ReplicatedBackend *pg;
   RepModifyRef rm;
@@ -247,7 +237,6 @@ void ReplicatedBackend::on_change()
   dout(10) << __func__ << dendl;
   for (auto& op : in_progress_ops) {
     delete op.second.on_commit;
-    delete op.second.on_applied;
   }
   in_progress_ops.clear();
   clear_recovery_state();
@@ -281,17 +270,6 @@ public:
     : pg(pg), op(op) {}
   void finish(int) override {
     pg->op_commit(op);
-  }
-};
-
-class C_OSD_OnOpApplied : public Context {
-  ReplicatedBackend *pg;
-  ReplicatedBackend::InProgressOp *op;
-public:
-  C_OSD_OnOpApplied(ReplicatedBackend *pg, ReplicatedBackend::InProgressOp *op) 
-    : pg(pg), op(op) {}
-  void finish(int) override {
-    pg->op_applied(op);
   }
 };
 
@@ -449,8 +427,6 @@ void ReplicatedBackend::submit_transaction(
   const eversion_t &roll_forward_to,
   const vector<pg_log_entry_t> &_log_entries,
   boost::optional<pg_hit_set_history_t> &hset_history,
-  Context *on_local_applied_sync,
-  Context *on_all_acked,
   Context *on_all_commit,
   ceph_tid_t tid,
   osd_reqid_t reqid,
@@ -478,16 +454,13 @@ void ReplicatedBackend::submit_transaction(
     make_pair(
       tid,
       InProgressOp(
-	tid, on_all_commit, on_all_acked,
+	tid, on_all_commit,
 	orig_op, at_version)
       )
     );
   assert(insert_res.second);
   InProgressOp &op = insert_res.first->second;
 
-  op.waiting_for_applied.insert(
-    parent->get_actingbackfill_shards().begin(),
-    parent->get_actingbackfill_shards().end());
   op.waiting_for_commit.insert(
     parent->get_actingbackfill_shards().begin(),
     parent->get_actingbackfill_shards().end());
@@ -517,10 +490,6 @@ void ReplicatedBackend::submit_transaction(
     true,
     op_t);
   
-  op_t.register_on_applied_sync(on_local_applied_sync);
-  op_t.register_on_applied(
-    parent->bless_context(
-      new C_OSD_OnOpApplied(this, &op)));
   op_t.register_on_commit(
     parent->bless_context(
       new C_OSD_OnOpCommit(this, &op)));
@@ -529,30 +498,6 @@ void ReplicatedBackend::submit_transaction(
   tls.push_back(std::move(op_t));
 
   parent->queue_transactions(tls, op.op);
-}
-
-void ReplicatedBackend::op_applied(
-  InProgressOp *op)
-{
-  FUNCTRACE(cct);
-  OID_EVENT_TRACE_WITH_MSG((op && op->op) ? op->op->get_req() : NULL, "OP_APPLIED_BEGIN", true);
-  dout(10) << __func__ << ": " << op->tid << dendl;
-  if (op->op) {
-    op->op->mark_event("op_applied");
-    op->op->pg_trace.event("op applied");
-  }
-
-  op->waiting_for_applied.erase(get_parent()->whoami_shard());
-  parent->op_applied(op->v);
-
-  if (op->waiting_for_applied.empty()) {
-    op->on_applied->complete(0);
-    op->on_applied = 0;
-  }
-  if (op->done()) {
-    assert(!op->on_commit && !op->on_applied);
-    in_progress_ops.erase(op->tid);
-  }
 }
 
 void ReplicatedBackend::op_commit(
@@ -571,9 +516,7 @@ void ReplicatedBackend::op_commit(
   if (op->waiting_for_commit.empty()) {
     op->on_commit->complete(0);
     op->on_commit = 0;
-  }
-  if (op->done()) {
-    assert(!op->on_commit && !op->on_applied);
+    assert(!op->on_commit);
     in_progress_ops.erase(op->tid);
   }
 }
@@ -620,32 +563,17 @@ void ReplicatedBackend::do_repop_reply(OpRequestRef op)
 	ip_op.op->pg_trace.event("sub_op_commit_rec");
       }
     } else {
-      assert(ip_op.waiting_for_applied.count(from));
-      if (ip_op.op) {
-        ostringstream ss;
-        ss << "sub_op_applied_rec from " << from;
-	ip_op.op->mark_event_string(ss.str());
-	ip_op.op->pg_trace.event("sub_op_applied_rec");
-      }
+      // legacy peer; ignore
     }
-    ip_op.waiting_for_applied.erase(from);
 
     parent->update_peer_last_complete_ondisk(
       from,
       r->get_last_complete_ondisk());
 
-    if (ip_op.waiting_for_applied.empty() &&
-        ip_op.on_applied) {
-      ip_op.on_applied->complete(0);
-      ip_op.on_applied = 0;
-    }
     if (ip_op.waiting_for_commit.empty() &&
         ip_op.on_commit) {
       ip_op.on_commit->complete(0);
-      ip_op.on_commit= 0;
-    }
-    if (ip_op.done()) {
-      assert(!ip_op.on_commit && !ip_op.on_applied);
+      ip_op.on_commit = 0;
       in_progress_ops.erase(iter);
     }
   }
@@ -717,7 +645,7 @@ int ReplicatedBackend::be_deep_scrub(
 
     bufferlist hdrbl;
     r = store->omap_get_header(
-      coll,
+      ch,
       ghobject_t(
 	poid, ghobject_t::NO_GEN, get_parent()->whoami_shard().shard),
       &hdrbl, true);
@@ -736,7 +664,7 @@ int ReplicatedBackend::be_deep_scrub(
 
   // omap
   ObjectMap::ObjectMapIterator iter = store->get_omap_iterator(
-    coll,
+    ch,
     ghobject_t(
       poid, ghobject_t::NO_GEN, get_parent()->whoami_shard().shard));
   assert(iter);
@@ -749,7 +677,7 @@ int ReplicatedBackend::be_deep_scrub(
   while (iter->status() == 0 && iter->valid()) {
     pos.omap_bytes += iter->value().length();
     ++pos.omap_keys;
-
+    --max;
     // fixme: we can do this more efficiently.
     bufferlist bl;
     encode(iter->key(), bl);
@@ -961,7 +889,7 @@ Message * ReplicatedBackend::generate_subop(
   eversion_t pg_roll_forward_to,
   hobject_t new_temp_oid,
   hobject_t discard_temp_oid,
-  const vector<pg_log_entry_t> &log_entries,
+  const bufferlist &log_entries,
   boost::optional<pg_hit_set_history_t> &hset_hist,
   ObjectStore::Transaction &op_t,
   pg_shard_t peer,
@@ -991,7 +919,7 @@ Message * ReplicatedBackend::generate_subop(
     wr->get_header().data_off = op_t.get_data_alignment();
   }
 
-  encode(log_entries, wr->logbl);
+  wr->logbl = log_entries;
 
   if (pinfo.is_incomplete())
     wr->pg_stats = pinfo.stats;  // reflects backfill progress
@@ -1021,44 +949,44 @@ void ReplicatedBackend::issue_op(
   InProgressOp *op,
   ObjectStore::Transaction &op_t)
 {
-  if (op->op) {
-    op->op->pg_trace.event("issue replication ops");
-    if (parent->get_actingbackfill_shards().size() > 1) {
+  if (parent->get_actingbackfill_shards().size() > 1) {
+    if (op->op) {
+      op->op->pg_trace.event("issue replication ops");
       ostringstream ss;
       set<pg_shard_t> replicas = parent->get_actingbackfill_shards();
       replicas.erase(parent->whoami_shard());
       ss << "waiting for subops from " << replicas;
       op->op->mark_sub_op_sent(ss.str());
     }
-  }
 
-  for (set<pg_shard_t>::const_iterator i =
-	 parent->get_actingbackfill_shards().begin();
-       i != parent->get_actingbackfill_shards().end();
-       ++i) {
-    if (*i == parent->whoami_shard()) continue;
-    pg_shard_t peer = *i;
-    const pg_info_t &pinfo = parent->get_shard_info().find(peer)->second;
+    // avoid doing the same work in generate_subop
+    bufferlist logs;
+    encode(log_entries, logs);
 
-    Message *wr;
-    wr = generate_subop(
-      soid,
-      at_version,
-      tid,
-      reqid,
-      pg_trim_to,
-      pg_roll_forward_to,
-      new_temp_oid,
-      discard_temp_oid,
-      log_entries,
-      hset_hist,
-      op_t,
-      peer,
-      pinfo);
-    if (op->op && op->op->pg_trace)
-      wr->trace.init("replicated op", nullptr, &op->op->pg_trace);
-    get_parent()->send_message_osd_cluster(
-      peer.osd, wr, get_osdmap()->get_epoch());
+    for (const auto& shard : get_parent()->get_actingbackfill_shards()) {
+      if (shard == parent->whoami_shard()) continue;
+      const pg_info_t &pinfo = parent->get_shard_info().find(shard)->second;
+
+      Message *wr;
+      wr = generate_subop(
+	  soid,
+	  at_version,
+	  tid,
+	  reqid,
+	  pg_trim_to,
+	  pg_roll_forward_to,
+	  new_temp_oid,
+	  discard_temp_oid,
+	  logs,
+	  hset_hist,
+	  op_t,
+	  shard,
+	  pinfo);
+      if (op->op && op->op->pg_trace)
+	wr->trace.init("replicated op", nullptr, &op->op->pg_trace);
+      get_parent()->send_message_osd_cluster(
+	  shard.osd, wr, get_osdmap()->get_epoch());
+    }
   }
 }
 
@@ -1141,41 +1069,12 @@ void ReplicatedBackend::do_repop(OpRequestRef op)
   rm->opt.register_on_commit(
     parent->bless_context(
       new C_OSD_RepModifyCommit(this, rm)));
-  rm->localt.register_on_applied(
-    parent->bless_context(
-      new C_OSD_RepModifyApply(this, rm)));
   vector<ObjectStore::Transaction> tls;
   tls.reserve(2);
   tls.push_back(std::move(rm->localt));
   tls.push_back(std::move(rm->opt));
   parent->queue_transactions(tls, op);
   // op is cleaned up by oncommit/onapply when both are executed
-}
-
-void ReplicatedBackend::repop_applied(RepModifyRef rm)
-{
-  rm->op->mark_event("sub_op_applied");
-  rm->applied = true;
-  rm->op->pg_trace.event("sup_op_applied");
-
-  dout(10) << __func__ << " on " << rm << " op "
-	   << *rm->op->get_req() << dendl;
-  const Message *m = rm->op->get_req();
-  const MOSDRepOp *req = static_cast<const MOSDRepOp*>(m);
-  eversion_t version = req->version;
-
-  // send ack to acker only if we haven't sent a commit already
-  if (!rm->committed) {
-    Message *ack = new MOSDRepOpReply(
-      req, parent->whoami_shard(),
-      0, get_osdmap()->get_epoch(), req->min_epoch, CEPH_OSD_FLAG_ACK);
-    ack->set_priority(CEPH_MSG_PRIO_HIGH); // this better match commit priority!
-    ack->trace = rm->op->pg_trace;
-    get_parent()->send_message_osd_cluster(
-      rm->ackerosd, ack, get_osdmap()->get_epoch());
-  }
-
-  parent->op_applied(version);
 }
 
 void ReplicatedBackend::repop_commit(RepModifyRef rm)
@@ -1919,7 +1818,7 @@ int ReplicatedBackend::build_push_op(const ObjectRecoveryInfo &recovery_info,
 
   eversion_t v  = recovery_info.version;
   if (progress.first) {
-    int r = store->omap_get_header(coll, ghobject_t(recovery_info.soid), &out_op->omap_header);
+    int r = store->omap_get_header(ch, ghobject_t(recovery_info.soid), &out_op->omap_header);
     if(r < 0) {
       dout(1) << __func__ << " get omap header failed: " << cpp_strerror(-r) << dendl; 
       return r;
@@ -1962,7 +1861,7 @@ int ReplicatedBackend::build_push_op(const ObjectRecoveryInfo &recovery_info,
   uint64_t available = cct->_conf->osd_recovery_max_chunk;
   if (!progress.omap_complete) {
     ObjectMap::ObjectMapIterator iter =
-      store->get_omap_iterator(coll,
+      store->get_omap_iterator(ch,
 			       ghobject_t(recovery_info.soid));
     assert(iter);
     for (iter->lower_bound(progress.omap_recovered_to);

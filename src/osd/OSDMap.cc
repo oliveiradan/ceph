@@ -3194,8 +3194,6 @@ void OSDMap::print(ostream& out) const
 
   for (const auto &addr : blacklist)
     out << "blacklist " << addr.first << " expires " << addr.second << "\n";
-
-  // ignore pg_swap_primary
 }
 
 class OSDTreePlainDumper : public CrushTreeDumper::Dumper<TextTable> {
@@ -3378,7 +3376,7 @@ void OSDMap::print_tree(Formatter *f, ostream *out, unsigned filter, string buck
 }
 
 void OSDMap::print_summary(Formatter *f, ostream& out,
-			   const string& prefix) const
+			   const string& prefix, bool extra) const
 {
   if (f) {
     f->open_object_section("osdmap");
@@ -3394,6 +3392,8 @@ void OSDMap::print_summary(Formatter *f, ostream& out,
     out << get_num_osds() << " osds: "
 	<< get_num_up_osds() << " up, "
 	<< get_num_in_osds() << " in";
+    if (extra)
+      out << "; epoch: e" << get_epoch();
     if (get_num_pg_temp())
       out << "; " << get_num_pg_temp() << " remapped pgs";
     out << "\n";
@@ -3410,9 +3410,9 @@ void OSDMap::print_oneline_summary(ostream& out) const
       << get_num_up_osds() << " up, "
       << get_num_in_osds() << " in";
   if (test_flag(CEPH_OSDMAP_FULL))
-    out << " full";
+    out << "; full flag set";
   else if (test_flag(CEPH_OSDMAP_NEARFULL))
-    out << " nearfull";
+    out << "; nearfull flag set";
 }
 
 bool OSDMap::crush_rule_in_use(int rule_id) const
