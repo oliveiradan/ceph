@@ -4526,6 +4526,16 @@ std::vector<Option> get_global_options() {
     Option("debug_asserts_on_shutdown", Option::TYPE_BOOL,Option::LEVEL_DEV)
     .set_default(false)
     .set_description("Enable certain asserts to check for refcounting bugs on shutdown; see http://tracker.ceph.com/issues/21738"),
+
+    /*  LDAP/KRB Authentication.
+    */
+    Option("krb_ktfile_client", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("/var/lib/ceph/$name/krb_$name.ktab")
+    .set_description("Kerberos Keytab file for client authentication")
+    .add_service({"mon", "osd"})
+    //.set_safe(),
+    .set_long_description("This sets the full path for the Kerberos keytab  "
+                          "file location. "),
   });
 }
 

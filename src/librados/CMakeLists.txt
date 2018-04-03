@@ -29,12 +29,14 @@ else(ENABLE_SHARED)
 endif(ENABLE_SHARED)
 target_link_libraries(librados PRIVATE
   osdc ceph-common cls_lock_client
-  ${BLKID_LIBRARIES} ${CRYPTO_LIBS} ${EXTRALIBS})
+  ${BLKID_LIBRARIES} ${CRYPTO_LIBS} ${EXTRALIBS} 
+  ${OPENLDAP_LIBRARIES} ${GSSAPI_LIBRARIES})
 if(WITH_STATIC_LIBSTDCXX)
   target_link_libraries(librados
     INTERFACE "-static-libstdc++ -static-libgcc")
 endif()
-target_link_libraries(librados ${rados_libs})
+target_link_libraries(librados ${rados_libs} 
+  ${OPENLDAP_LIBRARIES} ${GSSAPI_LIBRARIES})
 install(TARGETS librados DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 if(WITH_EMBEDDED)

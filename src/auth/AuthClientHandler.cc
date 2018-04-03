@@ -17,6 +17,8 @@
 
 #include "AuthClientHandler.h"
 #include "cephx/CephxClientHandler.h"
+#include "ldap_krb/KrbAuthorizeHandler.hpp"
+#include "ldap_krb/LdapAuthorizeHandler.hpp"
 #include "none/AuthNoneClientHandler.h"
 
 AuthClientHandler *get_auth_client_handler(CephContext *cct, int proto,
@@ -27,6 +29,18 @@ AuthClientHandler *get_auth_client_handler(CephContext *cct, int proto,
     return new CephxClientHandler(cct, rkeys);
   case CEPH_AUTH_NONE:
     return new AuthNoneClientHandler(cct, rkeys);
+
+  case CEPH_AUTH_KRB5: 
+  case CEPH_AUTH_KRB5_KRB5:
+    return new AuthKrbClientHandler(cct, rkeys);
+
+  case CEPH_AUTH_LDAP:
+  case CEPH_AUTH_LDAP_LDAP: 
+    return new AuthLdapClientHandler(cct, rkeys);
+
+  case CEPH_AUTH_LDAP_KRB5: 
+    return new AuthLdapKrbClientHandler(cct, rkeys);
+
   default:
     return NULL;
   }

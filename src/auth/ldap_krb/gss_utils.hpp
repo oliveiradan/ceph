@@ -27,6 +27,9 @@
  */
 
 #include <gssapi.h>
+#include <gssapi/gssapi_generic.h>
+#include <gssapi/gssapi_krb5.h>
+#include <gssapi/gssapi_ext.h>
 
 #include <string>
 
@@ -45,6 +48,9 @@ static const std::string KRB_DEFAULT_PORT_STR(std::to_string(KRB_DEFAULT_PORT_NU
 static const std::string KRB_SERVICE_NAME("kerberos");
 static const std::string GSS_API_SPNEGO_OID("{1.3.6.1.5.5.2}");
 static const std::string GSS_API_KRB5_OID("{1.2.840.113554.1.2.2}");
+static const gss_OID_desc GSS_API_KRB5_OID_PTR = 
+  { 9, (void *)"\052\206\110\206\367\022\001\002\002" };
+static const std::string GSS_TARGET_DEFAULT_NAME("ceph"); 
 
 ///
 std::string transform_gss_oid(const std::string&);

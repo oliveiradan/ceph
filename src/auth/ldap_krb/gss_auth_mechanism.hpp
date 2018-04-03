@@ -190,6 +190,13 @@ enum class GSSAuthenticationOptions {
   GSS_OID,
 };
 
+enum class GSSAuthenticationRequest {
+  GSS_CRYPTO_ERR    = 1,
+  GSS_MUTUAL        = 0x100,
+  GSS_TOKEN         = 0x200,
+  GSS_REQUEST_MASK  = 0x0F00
+};
+
 static constexpr auto BUFF_IN_SIZE  = 8192;
 static constexpr auto BUFF_OUT_SIZE = 8192;
 
