@@ -6,6 +6,7 @@ from textwrap import dedent
 from ceph_volume.util import prepare as prepare_utils
 from ceph_volume.util import encryption as encryption_utils
 from ceph_volume.util import system, disk
+from ceph_volume.util.arg_validators import exclude_group_options
 from ceph_volume import conf, decorators, terminal
 from ceph_volume.api import lvm as api
 from .common import prepare_parser, rollback_osd
@@ -66,7 +67,7 @@ def prepare_filestore(device, journal, secrets, tags, osd_id, fsid):
     # get the latest monmap
     prepare_utils.get_monmap(osd_id)
     # prepare the osd filesystem
-    prepare_utils.osd_mkfs_filestore(osd_id, fsid)
+    prepare_utils.osd_mkfs_filestore(osd_id, fsid, cephx_secret)
     # write the OSD keyring if it doesn't exist already
     prepare_utils.write_keyring(osd_id, cephx_secret)
     if secrets.get('dmcrypt_key'):
@@ -314,37 +315,17 @@ class Prepare(object):
 
         Encryption is supported via dmcrypt and the --dmcrypt flag.
 
-        Example calls for supported scenarios:
+        Existing logical volume (lv):
 
-        Filestore
-        ---------
+            ceph-volume lvm prepare --data {vg/lv}
 
-          Existing logical volume (lv) or device:
+        Existing block device, that will be made a group and logical volume:
 
-              ceph-volume lvm prepare --filestore --data {vg/lv} --journal /path/to/device
+            ceph-volume lvm prepare --data /path/to/device
 
-          Or:
+        Optionally, can consume db and wal devices or logical volumes:
 
-              ceph-volume lvm prepare --filestore --data {vg/lv} --journal {vg/lv}
-
-          Existing block device, that will be made a group and logical volume:
-
-              ceph-volume lvm prepare --filestore --data /path/to/device --journal {vg/lv}
-
-        Bluestore
-        ---------
-
-          Existing logical volume (lv):
-
-              ceph-volume lvm prepare --bluestore --data {vg/lv}
-
-          Existing block device, that will be made a group and logical volume:
-
-              ceph-volume lvm prepare --bluestore --data /path/to/device
-
-          Optionally, can consume db and wal devices or logical volumes:
-
-              ceph-volume lvm prepare --bluestore --data {vg/lv} --block.wal {device} --block-db {vg/lv}
+            ceph-volume lvm prepare --data {vg/lv} --block.wal {device} --block-db {vg/lv}
         """)
         parser = prepare_parser(
             prog='ceph-volume lvm prepare',
@@ -353,6 +334,7 @@ class Prepare(object):
         if len(self.argv) == 0:
             print(sub_command_help)
             return
+        exclude_group_options(parser, argv=self.argv, groups=['filestore', 'bluestore'])
         args = parser.parse_args(self.argv)
         # Default to bluestore here since defaulting it in add_argument may
         # cause both to be True

@@ -316,7 +316,8 @@ Engine::Engine(thread_data* td)
 
   // claim the g_ceph_context reference and release it on destruction
   cct = global_init(nullptr, args, CEPH_ENTITY_TYPE_OSD,
-			 CODE_ENVIRONMENT_UTILITY, 0);
+		    CODE_ENVIRONMENT_UTILITY,
+		    CINIT_FLAG_NO_DEFAULT_CONFIG_FILE);
   common_init_finish(g_ceph_context);
 
   // create the ObjectStore
@@ -667,10 +668,9 @@ int fio_ceph_os_queue(thread_data* td, io_u* u)
       ghobject_t pgmeta_oid(coll.pg.make_pgmeta_oid());
       t.omap_setkeys(coll.cid, pgmeta_oid, omaps);
     }
+    t.register_on_commit(new UnitComplete(u));
     os->queue_transaction(coll.ch,
-                          std::move(t),
-                          nullptr,
-                          new UnitComplete(u));
+                          std::move(t));
     return FIO_Q_QUEUED;
   }
 

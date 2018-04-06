@@ -74,6 +74,7 @@
 #include "AuthMonitor.h"
 #include "MgrMonitor.h"
 #include "MgrStatMonitor.h"
+#include "ConfigMonitor.h"
 #include "mon/QuorumService.h"
 #include "mon/HealthMonitor.h"
 #include "mon/ConfigKeyService.h"
@@ -171,12 +172,19 @@ Monitor::Monitor(CephContext* cct_, string nm, MonitorDBStore *s,
   paxos_service(PAXOS_NUM),
   admin_hook(NULL),
   routed_request_tid(0),
-  op_tracker(cct, true, 1)
+  op_tracker(cct, g_conf->get_val<bool>("mon_enable_op_tracker"), 1)
 {
   clog = log_client.create_channel(CLOG_CHANNEL_CLUSTER);
   audit_clog = log_client.create_channel(CLOG_CHANNEL_AUDIT);
 
   update_log_clients();
+
+  op_tracker.set_complaint_and_threshold(g_conf->get_val<double>("mon_op_complaint_time"),                              
+                                         g_conf->get_val<int64_t>("mon_op_log_threshold"));
+  op_tracker.set_history_size_and_duration(g_conf->get_val<uint64_t>("mon_op_history_size"),
+                                           g_conf->get_val<uint64_t>("mon_op_history_duration"));
+  op_tracker.set_history_slow_op_size_and_threshold(g_conf->get_val<uint64_t>("mon_op_history_slow_op_size"),
+                                                    g_conf->get_val<double>("mon_op_history_slow_op_threshold"));
 
   if (!krb_ktfile_client.empty()) {
     auto result(setenv("KRB5_CLIENT_KTNAME", 
@@ -194,6 +202,7 @@ Monitor::Monitor(CephContext* cct_, string nm, MonitorDBStore *s,
   paxos_service[PAXOS_MGR] = new MgrMonitor(this, paxos, "mgr");
   paxos_service[PAXOS_MGRSTAT] = new MgrStatMonitor(this, paxos, "mgrstat");
   paxos_service[PAXOS_HEALTH] = new HealthMonitor(this, paxos, "health");
+  paxos_service[PAXOS_CONFIG] = new ConfigMonitor(this, paxos, "config");
 
   config_key_service = new ConfigKeyService(this, paxos);
 
@@ -219,6 +228,8 @@ Monitor::Monitor(CephContext* cct_, string nm, MonitorDBStore *s,
 
 Monitor::~Monitor()
 {
+  op_tracker.on_shutdown();
+
   for (vector<PaxosService*>::iterator p = paxos_service.begin(); p != paxos_service.end(); ++p)
     delete *p;
   delete config_key_service;
@@ -269,6 +280,14 @@ void Monitor::do_admin_command(std::string_view command, const cmdmap_t& cmdmap,
     << "from='admin socket' entity='admin socket' "
     << "cmd='" << command << "' args=" << args << ": dispatch";
 
+  set<string> filters;
+  vector<string> filter_str;
+  if (cmd_getval(cct, cmdmap, "filterstr", filter_str)) {                                                                                                                           
+      copy(filter_str.begin(), filter_str.end(),
+          inserter(filters, filters.end()));
+  }
+
+
   if (command == "mon_status") {
     get_mon_status(f.get(), ss);
     if (f)
@@ -312,6 +331,27 @@ void Monitor::do_admin_command(std::string_view command, const cmdmap_t& cmdmap,
       f->flush(ss);
     }
 
+  } else if (command == "dump_historic_ops") {
+    if (op_tracker.dump_historic_ops(f.get())) {
+      f->flush(ss);
+    } else {
+      ss << "op_tracker tracking is not enabled now, so no ops are tracked currently, even those get stuck. \
+        please enable \"mon_enable_op_tracker\", and the tracker will start to track new ops received afterwards.";
+    }
+  } else if (command == "dump_historic_ops_by_duration" ) {
+    if (op_tracker.dump_historic_ops(f.get(), true)) {
+      f->flush(ss);
+    } else {
+      ss << "op_tracker tracking is not enabled now, so no ops are tracked currently, even those get stuck. \
+        please enable \"mon_enable_op_tracker\", and the tracker will start to track new ops received afterwards.";
+    }
+  } else if (command == "dump_historic_slow_ops") {
+    if (op_tracker.dump_historic_slow_ops(f.get(), filters)) {
+      f->flush(ss);
+    } else {
+      ss << "op_tracker tracking is not enabled now, so no ops are tracked currently, even those get stuck. \
+        please enable \"mon_enable_op_tracker\", and the tracker will start to track new ops received afterwards.";
+    }
   } else {
     assert(0 == "bad AdminSocket command binding");
   }
@@ -588,9 +628,9 @@ int Monitor::preinit()
     pcb.add_u64(l_cluster_num_osd_up, "num_osd_up", "OSDs that are up");
     pcb.add_u64(l_cluster_num_osd_in, "num_osd_in", "OSD in state \"in\" (they are in cluster)");
     pcb.add_u64(l_cluster_osd_epoch, "osd_epoch", "Current epoch of OSD map");
-    pcb.add_u64(l_cluster_osd_bytes, "osd_bytes", "Total capacity of cluster");
-    pcb.add_u64(l_cluster_osd_bytes_used, "osd_bytes_used", "Used space");
-    pcb.add_u64(l_cluster_osd_bytes_avail, "osd_bytes_avail", "Available space");
+    pcb.add_u64(l_cluster_osd_bytes, "osd_bytes", "Total capacity of cluster", NULL, 0, unit_t(BYTES));
+    pcb.add_u64(l_cluster_osd_bytes_used, "osd_bytes_used", "Used space", NULL, 0, unit_t(BYTES));
+    pcb.add_u64(l_cluster_osd_bytes_avail, "osd_bytes_avail", "Available space", NULL, 0, unit_t(BYTES));
     pcb.add_u64(l_cluster_num_pool, "num_pool", "Pools");
     pcb.add_u64(l_cluster_num_pg, "num_pg", "Placement groups");
     pcb.add_u64(l_cluster_num_pg_active_clean, "num_pg_active_clean", "Placement groups in active+clean state");
@@ -600,7 +640,7 @@ int Monitor::preinit()
     pcb.add_u64(l_cluster_num_object_degraded, "num_object_degraded", "Degraded (missing replicas) objects");
     pcb.add_u64(l_cluster_num_object_misplaced, "num_object_misplaced", "Misplaced (wrong location in the cluster) objects");
     pcb.add_u64(l_cluster_num_object_unfound, "num_object_unfound", "Unfound objects");
-    pcb.add_u64(l_cluster_num_bytes, "num_bytes", "Size of all objects");
+    pcb.add_u64(l_cluster_num_bytes, "num_bytes", "Size of all objects", NULL, 0, unit_t(BYTES));
     cluster_logger = pcb.create_perf_counters();
   }
 
@@ -757,6 +797,18 @@ int Monitor::preinit()
                                      admin_hook,
                                      "list existing sessions");
   assert(r == 0);
+  r = admin_socket->register_command("dump_historic_ops", "dump_historic_ops",
+                                     admin_hook,
+                                    "show recent ops");
+  assert(r == 0);
+  r = admin_socket->register_command("dump_historic_ops_by_duration", "dump_historic_ops_by_duration",
+                                     admin_hook,
+                                    "show recent ops, sorted by duration");
+  assert(r == 0);
+  r = admin_socket->register_command("dump_historic_slow_ops", "dump_historic_slow_ops",
+                                     admin_hook,
+                                    "show recent slow ops");
+  assert(r == 0);
 
   lock.Lock();
 
@@ -883,6 +935,9 @@ void Monitor::shutdown()
     admin_socket->unregister_command("quorum exit");
     admin_socket->unregister_command("ops");
     admin_socket->unregister_command("sessions");
+    admin_socket->unregister_command("dump_historic_ops");
+    admin_socket->unregister_command("dump_historic_ops_by_duration");
+    admin_socket->unregister_command("dump_historic_slow_ops");
     delete admin_hook;
     admin_hook = NULL;
   }
@@ -2807,10 +2862,8 @@ bool Monitor::is_keyring_required()
   string auth_service_required = g_conf->auth_supported.empty() ?
     g_conf->auth_service_required : g_conf->auth_supported;
 
-  return auth_service_required == "cephx" || 
-         auth_cluster_required == "cephx" || 
-         auth_service_required == "krb"   || 
-         auth_cluster_required == "krb";
+  return auth_service_required == "cephx" ||
+    auth_cluster_required == "cephx";
 }
 
 struct C_MgrProxyCommand : public Context {
@@ -3049,6 +3102,10 @@ void Monitor::handle_command(MonOpRequestRef op)
     osdmon()->dispatch(op);
     return;
   }
+  if (module == "config") {
+    configmon()->dispatch(op);
+    return;
+  }
 
   if (module == "mon" &&
       /* Let the Monitor class handle the following commands:
@@ -3176,7 +3233,7 @@ void Monitor::handle_command(MonOpRequestRef op)
     cmd_getval(cct, cmdmap, "key", key);
     std::string val;
     cmd_getval(cct, cmdmap, "value", val);
-    r = g_conf->set_val(key, val, true, &ss);
+    r = g_conf->set_val(key, val, &ss);
     if (r == 0) {
       g_conf->apply_changes(nullptr);
     }
@@ -3285,6 +3342,7 @@ void Monitor::handle_command(MonOpRequestRef op)
       print_nodes(f.get(), ds);
       osdmon()->print_nodes(f.get());
       mdsmon()->print_nodes(f.get());
+      mgrmon()->print_nodes(f.get());
       f->close_section();
     } else if (node_type == "mon") {
       print_nodes(f.get(), ds);
@@ -3292,6 +3350,8 @@ void Monitor::handle_command(MonOpRequestRef op)
       osdmon()->print_nodes(f.get());
     } else if (node_type == "mds") {
       mdsmon()->print_nodes(f.get());
+    } else if (node_type == "mgr") {
+      mgrmon()->print_nodes(f.get());
     }
     f->flush(ds);
     rdata.append(ds);
@@ -3636,6 +3696,7 @@ void Monitor::handle_forward(MonOpRequestRef op)
     c->set_peer_type(m->client.name.type());
     c->set_features(m->con_features);
 
+    s->authenticated = true;
     s->caps = m->client_caps;
     dout(10) << " caps are " << s->caps << dendl;
     s->entity_name = m->entity_name;
@@ -3983,6 +4044,7 @@ void Monitor::_ms_dispatch(Message *m)
       dout(5) << __func__ << " setting monitor caps on this connection" << dendl;
       if (!s->caps.is_allow_all()) // but no need to repeatedly copy
         s->caps = *mon_caps;
+      s->authenticated = true;
     }
     s->put();
   } else {
@@ -4024,7 +4086,6 @@ void Monitor::dispatch_op(MonOpRequestRef op)
   /* we will consider the default type as being 'monitor' until proven wrong */
   op->set_type_monitor();
   /* deal with all messages that do not necessarily need caps */
-  bool dealt_with = true;
   switch (op->get_req()->get_type()) {
     // auth
     case MSG_MON_GLOBAL_ID:
@@ -4032,11 +4093,11 @@ void Monitor::dispatch_op(MonOpRequestRef op)
       op->set_type_service();
       /* no need to check caps here */
       paxos_service[PAXOS_AUTH]->dispatch(op);
-      break;
+      return;
 
     case CEPH_MSG_PING:
       handle_ping(op);
-      break;
+      return;
 
     /* MMonGetMap may be used by clients to obtain a monmap *before*
      * authenticating with the monitor.  We need to handle these without
@@ -4047,22 +4108,33 @@ void Monitor::dispatch_op(MonOpRequestRef op)
      */
     case CEPH_MSG_MON_GET_MAP:
       handle_mon_get_map(op);
-      break;
+      return;
+  }
+
+  if (!op->get_session()->authenticated) {
+    dout(5) << __func__ << " " << op->get_req()->get_source_inst()
+            << " is not authenticated, dropping " << *(op->get_req())
+            << dendl;
+    return;
+  }
+
+  switch (op->get_req()->get_type()) {
+    case MSG_GET_CONFIG:
+      configmon()->handle_get_config(op);
+      return;
 
     case CEPH_MSG_MON_METADATA:
       return handle_mon_metadata(op);
 
-    default:
-      dealt_with = false;
-      break;
+    case CEPH_MSG_MON_SUBSCRIBE:
+      /* FIXME: check what's being subscribed, filter accordingly */
+      handle_subscribe(op);
+      return;
   }
-  if (dealt_with)
-    return;
 
   /* well, maybe the op belongs to a service... */
   op->set_type_service();
   /* deal with all messages which caps should be checked somewhere else */
-  dealt_with = true;
   switch (op->get_req()->get_type()) {
 
     // OSDs
@@ -4078,43 +4150,37 @@ void Monitor::dispatch_op(MonOpRequestRef op)
     case MSG_OSD_PG_CREATED:
     case MSG_REMOVE_SNAPS:
       paxos_service[PAXOS_OSDMAP]->dispatch(op);
-      break;
+      return;
 
     // MDSs
     case MSG_MDS_BEACON:
     case MSG_MDS_OFFLOAD_TARGETS:
       paxos_service[PAXOS_MDSMAP]->dispatch(op);
-      break;
+      return;
 
     // Mgrs
     case MSG_MGR_BEACON:
       paxos_service[PAXOS_MGR]->dispatch(op);
-      break;
+      return;
 
     // MgrStat
     case MSG_MON_MGR_REPORT:
     case CEPH_MSG_STATFS:
     case MSG_GETPOOLSTATS:
       paxos_service[PAXOS_MGRSTAT]->dispatch(op);
-      break;
+      return;
 
-    // log
+      // log
     case MSG_LOG:
       paxos_service[PAXOS_LOG]->dispatch(op);
-      break;
+      return;
 
     // handle_command() does its own caps checking
     case MSG_MON_COMMAND:
       op->set_type_command();
       handle_command(op);
-      break;
-
-    default:
-      dealt_with = false;
-      break;
+      return;
   }
-  if (dealt_with)
-    return;
 
   /* nop, looks like it's not a service message; revert back to monitor */
   op->set_type_monitor();
@@ -4126,34 +4192,21 @@ void Monitor::dispatch_op(MonOpRequestRef op)
     dout(5) << __func__ << " " << op->get_req()->get_source_inst()
             << " not enough caps for " << *(op->get_req()) << " -- dropping"
             << dendl;
-    goto drop;
+    return;
   }
 
-  dealt_with = true;
   switch (op->get_req()->get_type()) {
-
     // misc
     case CEPH_MSG_MON_GET_VERSION:
       handle_get_version(op);
-      break;
-
-    case CEPH_MSG_MON_SUBSCRIBE:
-      /* FIXME: check what's being subscribed, filter accordingly */
-      handle_subscribe(op);
-      break;
-
-    default:
-      dealt_with = false;
-      break;
+      return;
   }
-  if (dealt_with)
-    return;
 
   if (!op->is_src_mon()) {
     dout(1) << __func__ << " unexpected monitor message from"
             << " non-monitor entity " << op->get_req()->get_source_inst()
             << " " << *(op->get_req()) << " -- dropping" << dendl;
-    goto drop;
+    return;
   }
 
   /* messages that should only be sent by another monitor */
@@ -4162,31 +4215,31 @@ void Monitor::dispatch_op(MonOpRequestRef op)
 
     case MSG_ROUTE:
       handle_route(op);
-      break;
+      return;
 
     case MSG_MON_PROBE:
       handle_probe(op);
-      break;
+      return;
 
     // Sync (i.e., the new slurp, but on steroids)
     case MSG_MON_SYNC:
       handle_sync(op);
-      break;
+      return;
     case MSG_MON_SCRUB:
       handle_scrub(op);
-      break;
+      return;
 
     /* log acks are sent from a monitor we sent the MLog to, and are
        never sent by clients to us. */
     case MSG_LOGACK:
       log_client.handle_log_ack((MLogAck*)op->get_req());
-      break;
+      return;
 
     // monmap
     case MSG_MON_JOIN:
       op->set_type_service();
       paxos_service[PAXOS_MONMAP]->dispatch(op);
-      break;
+      return;
 
     // paxos
     case MSG_MON_PAXOS:
@@ -4195,7 +4248,7 @@ void Monitor::dispatch_op(MonOpRequestRef op)
         MMonPaxos *pm = static_cast<MMonPaxos*>(op->get_req());
         if (!op->get_session()->is_capable("mon", MON_CAP_X)) {
           //can't send these!
-          break;
+          return;
         }
 
         if (state == STATE_SYNCHRONIZING) {
@@ -4203,21 +4256,21 @@ void Monitor::dispatch_op(MonOpRequestRef op)
           // good, thus just drop them and ignore them.
           dout(10) << __func__ << " ignore paxos msg from "
             << pm->get_source_inst() << dendl;
-          break;
+          return;
         }
 
         // sanitize
         if (pm->epoch > get_epoch()) {
           bootstrap();
-          break;
+          return;
         }
         if (pm->epoch != get_epoch()) {
-          break;
+          return;
         }
 
         paxos->dispatch(op);
       }
-      break;
+      return;
 
     // elector messages
     case MSG_MON_ELECTION:
@@ -4226,37 +4279,32 @@ void Monitor::dispatch_op(MonOpRequestRef op)
       if (!op->get_session()->is_capable("mon", MON_CAP_X)) {
         dout(0) << "MMonElection received from entity without enough caps!"
           << op->get_session()->caps << dendl;
-        break;
+        return;;
       }
       if (!is_probing() && !is_synchronizing()) {
         elector.dispatch(op);
       }
-      break;
+      return;
 
     case MSG_FORWARD:
       handle_forward(op);
-      break;
+      return;
 
     case MSG_TIMECHECK:
       handle_timecheck(op);
+      return;
+
+    case MSG_MON_HEALTH:
+      dout(5) << __func__ << " dropping deprecated message: "
+	      << *op->get_req() << dendl;
       break;
 
     case MSG_MON_HEALTH_CHECKS:
       op->set_type_service();
       paxos_service[PAXOS_HEALTH]->dispatch(op);
-      break;
-
-    default:
-      dealt_with = false;
-      break;
+      return;
   }
-  if (!dealt_with) {
-    dout(1) << "dropping unexpected " << *(op->get_req()) << dendl;
-    goto drop;
-  }
-  return;
-
-drop:
+  dout(1) << "dropping unexpected " << *(op->get_req()) << dendl;
   return;
 }
 
@@ -4734,6 +4782,15 @@ void Monitor::handle_subscribe(MonOpRequestRef op)
   for (map<string,ceph_mon_subscribe_item>::iterator p = m->what.begin();
        p != m->what.end();
        ++p) {
+    if (p->first == "monmap" || p->first == "config") {
+      // these require no caps
+    } else if (!s->is_capable("mon", MON_CAP_R)) {
+      dout(5) << __func__ << " " << op->get_req()->get_source_inst()
+	      << " not enough caps for " << *(op->get_req()) << " -- dropping"
+	      << dendl;
+      continue;
+    }
+
     // if there are any non-onetime subscriptions, we need to reply to start the resubscribe timer
     if ((p->second.flags & CEPH_SUBSCRIBE_ONETIME) == 0)
       reply = true;
@@ -4785,6 +4842,8 @@ void Monitor::handle_subscribe(MonOpRequestRef op)
       mgrmon()->check_sub(s->sub_map[p->first]);
     } else if (p->first == "servicemap") {
       mgrstatmon()->check_sub(s->sub_map[p->first]);
+    } else if (p->first == "config") {
+      configmon()->check_sub(s);
     }
   }
 
@@ -4969,7 +5028,7 @@ void Monitor::count_metadata(const string& field, Formatter *f)
 
 int Monitor::print_nodes(Formatter *f, ostream& err)
 {
-  map<string, list<int> > mons;	// hostname => mon
+  map<string, list<string> > mons;	// hostname => mon
   for (map<int, Metadata>::iterator it = mon_metadata.begin();
        it != mon_metadata.end(); ++it) {
     const Metadata& m = it->second;
@@ -4978,7 +5037,7 @@ int Monitor::print_nodes(Formatter *f, ostream& err)
       // not likely though
       continue;
     }
-    mons[hostname->second].push_back(it->first);
+    mons[hostname->second].push_back(monmap->get_name(it->first));
   }
 
   dump_services(f, mons, "mon");
@@ -5388,7 +5447,34 @@ void Monitor::tick()
     paxos->trigger_propose();
   }
 
+  mgr_client.update_daemon_health(get_health_metrics());
   new_tick();
+}
+
+vector<DaemonHealthMetric> Monitor::get_health_metrics() 
+{
+  vector<DaemonHealthMetric> metrics;
+
+  utime_t oldest_secs;
+  const utime_t now = ceph_clock_now();
+  auto too_old = now;
+  too_old -= g_conf->get_val<double>("mon_op_complaint_time");
+  int slow = 0;
+
+  auto count_slow_ops = [&](TrackedOp& op) {
+    if (op.get_initiated() < too_old) {
+      slow++;
+      return true;
+    } else {
+      return false;
+    }
+  };
+  if (op_tracker.visit_ops_in_flight(&oldest_secs, count_slow_ops)) {
+    metrics.emplace_back(daemon_metric::SLOW_OPS, slow, oldest_secs);
+  } else {
+    metrics.emplace_back(daemon_metric::SLOW_OPS, 0, 0);
+  }
+  return metrics;
 }
 
 void Monitor::prepare_new_fingerprint(MonitorDBStore::TransactionRef t)

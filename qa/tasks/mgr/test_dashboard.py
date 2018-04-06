@@ -45,12 +45,7 @@ class TestDashboard(MgrTestCase):
         # the content is correct or even renders!
 
         urls = [
-            "/health",
-            "/servers",
-            "/osd/",
-            "/osd/perf/0",
-            "/rbd_mirroring",
-            "/rbd_iscsi"
+            "/",
         ]
 
         failures = []

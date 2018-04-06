@@ -325,8 +325,8 @@ public:
   epoch_t get_last_peering_reset_epoch() const override {
     return get_last_peering_reset();
   }
-  const set<pg_shard_t> &get_actingbackfill_shards() const override {
-    return actingbackfill;
+  const set<pg_shard_t> &get_acting_recovery_backfill_shards() const override {
+    return acting_recovery_backfill;
   }
   const set<pg_shard_t> &get_acting_shards() const override {
     return actingset;
@@ -354,6 +354,9 @@ public:
   }
   const PGLog &get_log() const override {
     return pg_log;
+  }
+  void add_local_next_event(const pg_log_entry_t& e) {
+    pg_log.missing_add_next_entry(e);
   }
   bool pgb_is_primary() const override {
     return is_primary();
@@ -414,20 +417,11 @@ public:
     append_log(logv, trim_to, roll_forward_to, t, transaction_applied);
   }
 
+  void op_applied(const eversion_t &applied_version) override;
+
   bool should_send_op(
     pg_shard_t peer,
-    const hobject_t &hoid) override {
-    if (peer == get_primary())
-      return true;
-    assert(peer_info.count(peer));
-    bool should_send =
-      hoid.pool != (int64_t)info.pgid.pool() ||
-      hoid <= last_backfill_started ||
-      hoid <= peer_info[peer].last_backfill;
-    if (!should_send)
-      assert(is_backfill_targets(peer));
-    return should_send;
-  }
+    const hobject_t &hoid) override;
 
   bool pg_is_undersized() const override {
     return is_undersized();
@@ -878,7 +872,7 @@ protected:
   void simple_opc_submit(OpContextUPtr ctx);
 
   /**
-   * Merge entries atomically into all actingbackfill osds
+   * Merge entries atomically into all acting_recovery_backfill osds
    * adjusting missing and recovery state as necessary.
    *
    * Also used to store error log entries for dup detection.
@@ -1089,9 +1083,11 @@ protected:
   bool new_backfill;
 
   int prep_object_replica_pushes(const hobject_t& soid, eversion_t v,
-				 PGBackend::RecoveryHandle *h);
+				 PGBackend::RecoveryHandle *h,
+				 bool *work_started);
   int prep_object_replica_deletes(const hobject_t& soid, eversion_t v,
-				  PGBackend::RecoveryHandle *h);
+				  PGBackend::RecoveryHandle *h,
+				  bool *work_started);
 
   void finish_degraded_object(const hobject_t& oid);
 
@@ -1218,7 +1214,8 @@ protected:
     ThreadPool::TPHandle &handle, uint64_t *started) override;
 
   uint64_t recover_primary(uint64_t max, ThreadPool::TPHandle &handle);
-  uint64_t recover_replicas(uint64_t max, ThreadPool::TPHandle &handle);
+  uint64_t recover_replicas(uint64_t max, ThreadPool::TPHandle &handle,
+		            bool *recovery_started);
   hobject_t earliest_peer_backfill() const;
   bool all_peer_done() const;
   /**
@@ -1301,8 +1298,8 @@ protected:
   void _copy_some(ObjectContextRef obc, CopyOpRef cop);
   void finish_copyfrom(CopyFromCallback *cb);
   void finish_promote(int r, CopyResults *results, ObjectContextRef obc);
-  void cancel_copy(CopyOpRef cop, bool requeue);
-  void cancel_copy_ops(bool requeue);
+  void cancel_copy(CopyOpRef cop, bool requeue, vector<ceph_tid_t> *tids);
+  void cancel_copy_ops(bool requeue, vector<ceph_tid_t> *tids);
 
   friend struct C_Copyfrom;
 
@@ -1316,8 +1313,8 @@ protected:
     boost::optional<std::function<void()>> &&on_flush);
   void finish_flush(hobject_t oid, ceph_tid_t tid, int r);
   int try_flush_mark_clean(FlushOpRef fop);
-  void cancel_flush(FlushOpRef fop, bool requeue);
-  void cancel_flush_ops(bool requeue);
+  void cancel_flush(FlushOpRef fop, bool requeue, vector<ceph_tid_t> *tids);
+  void cancel_flush_ops(bool requeue, vector<ceph_tid_t> *tids);
 
   /// @return false if clone is has been evicted
   bool is_present_clone(hobject_t coid);
@@ -1366,14 +1363,14 @@ protected:
 
   map<hobject_t, list<OpRequestRef>> in_progress_proxy_ops;
   void kick_proxy_ops_blocked(hobject_t& soid);
-  void cancel_proxy_ops(bool requeue);
+  void cancel_proxy_ops(bool requeue, vector<ceph_tid_t> *tids);
 
   // -- proxyread --
   map<ceph_tid_t, ProxyReadOpRef> proxyread_ops;
 
   void do_proxy_read(OpRequestRef op, ObjectContextRef obc = NULL);
   void finish_proxy_read(hobject_t oid, ceph_tid_t tid, int r);
-  void cancel_proxy_read(ProxyReadOpRef prdop);
+  void cancel_proxy_read(ProxyReadOpRef prdop, vector<ceph_tid_t> *tids);
 
   friend struct C_ProxyRead;
 
@@ -1382,7 +1379,7 @@ protected:
 
   void do_proxy_write(OpRequestRef op, ObjectContextRef obc = NULL);
   void finish_proxy_write(hobject_t oid, ceph_tid_t tid, int r);
-  void cancel_proxy_write(ProxyWriteOpRef pwop);
+  void cancel_proxy_write(ProxyWriteOpRef pwop, vector<ceph_tid_t> *tids);
 
   friend struct C_ProxyWrite_Commit;
 
@@ -1785,6 +1782,7 @@ public:
   void wait_for_all_missing(OpRequestRef op);
 
   bool is_degraded_or_backfilling_object(const hobject_t& oid);
+  bool is_degraded_on_async_recovery_target(const hobject_t& soid);
   void wait_for_degraded_object(const hobject_t& oid, OpRequestRef op);
 
   void block_write_on_full_cache(
@@ -1823,7 +1821,7 @@ public:
   void on_removal(ObjectStore::Transaction *t) override;
   void shutdown() override;
   void on_shutdown();
-  bool check_failsafe_full(ostream &ss) override;
+  bool check_failsafe_full() override;
   bool check_osdmap_full(const set<pg_shard_t> &missing_on) override;
   bool maybe_preempt_replica_scrub(const hobject_t& oid) override {
     return write_blocked_by_scrub(oid);

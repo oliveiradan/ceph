@@ -76,9 +76,10 @@ template<> bool cmd_getval(CephContext *cct, const cmdmap_t& cmdmap,
 
 // my methods
 
-void MDSMonitor::print_map(FSMap &m, int dbl)
+template <int dblV>
+void MDSMonitor::print_map(FSMap &m)
 {
-  dout(dbl) << "print_map\n";
+  dout(dblV) << "print_map\n";
   m.print(*_dout);
   *_dout << dendl;
 }
@@ -120,7 +121,7 @@ void MDSMonitor::update_from_paxos(bool *need_bootstrap)
 
   // new map
   dout(4) << "new map" << dendl;
-  print_map(fsmap, 0);
+  print_map<0>(fsmap);
   if (!g_conf->mon_mds_skip_sanity) {
     fsmap.sanity();
   }
@@ -152,7 +153,7 @@ void MDSMonitor::encode_pending(MonitorDBStore::TransactionRef t)
 
 
   // print map iff 'debug mon = 30' or higher
-  print_map(pending_fsmap, 30);
+  print_map<30>(pending_fsmap);
   if (!g_conf->mon_mds_skip_sanity) {
     pending_fsmap.sanity();
   }
@@ -1734,7 +1735,7 @@ int MDSMonitor::print_nodes(Formatter *f)
     return r;
   }
 
-  map<string, list<int> > mdses; // hostname => rank
+  map<string, list<string> > mdses; // hostname => mds
   for (map<mds_gid_t, Metadata>::iterator it = metadata.begin();
        it != metadata.end(); ++it) {
     const Metadata& m = it->second;
@@ -1749,8 +1750,7 @@ int MDSMonitor::print_nodes(Formatter *f)
       continue;
     }
     const MDSMap::mds_info_t& mds_info = fsmap.get_info_gid(gid);
-    // FIXME: include filesystem name with rank here
-    mdses[hostname->second].push_back(mds_info.rank);
+    mdses[hostname->second].push_back(mds_info.name);
   }
 
   dump_services(f, mdses, "mds");

@@ -20,7 +20,7 @@
 
 static void usage()
 {
-  derr << "usage: ceph_objectstore_bench [flags]\n"
+  cout << "usage: ceph_objectstore_bench [flags]\n"
       "	 --size\n"
       "	       total size in bytes\n"
       "	 --block-size\n"
@@ -30,7 +30,7 @@ static void usage()
       "	 --threads\n"
       "	       number of threads to carry out this workload\n"
       "	 --multi-object\n"
-      "	       have each thread write to a separate object\n" << dendl;
+    "	       have each thread write to a separate object\n" << std::endl;
   generic_server_usage();
 }
 
@@ -152,10 +152,10 @@ int main(int argc, const char *argv[])
   // command-line arguments
   vector<const char*> args;
   argv_to_vec(argc, argv, args);
-  env_to_vec(args);
 
   auto cct = global_init(nullptr, args, CEPH_ENTITY_TYPE_OSD,
-			 CODE_ENVIRONMENT_UTILITY, 0);
+			 CODE_ENVIRONMENT_UTILITY,
+			 CINIT_FLAG_NO_DEFAULT_CONFIG_FILE);
 
   std::string val;
   vector<const char*>::iterator i = args.begin();
@@ -167,13 +167,13 @@ int main(int argc, const char *argv[])
       std::string err;
       if (!cfg.size.parse(val, &err)) {
         derr << "error parsing size: " << err << dendl;
-        usage();
+        exit(1);
       }
     } else if (ceph_argparse_witharg(args, i, &val, "--block-size", (char*)nullptr)) {
       std::string err;
       if (!cfg.block_size.parse(val, &err)) {
         derr << "error parsing block-size: " << err << dendl;
-        usage();
+        exit(1);
       }
     } else if (ceph_argparse_witharg(args, i, &val, "--repeats", (char*)nullptr)) {
       cfg.repeats = atoi(val.c_str());
@@ -183,7 +183,7 @@ int main(int argc, const char *argv[])
       cfg.multi_object = true;
     } else {
       derr << "Error: can't understand argument: " << *i << "\n" << dendl;
-      usage();
+      exit(1);
     }
   }
 

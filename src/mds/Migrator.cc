@@ -622,7 +622,7 @@ void Migrator::show_exporting()
 
 void Migrator::audit()
 {
-  if (!g_conf->subsys.should_gather(ceph_subsys_mds, 5))
+  if (!g_conf->subsys.should_gather<ceph_subsys_mds, 5>())
     return;  // hrm.
 
   // import_state
@@ -1552,8 +1552,6 @@ void Migrator::finish_export_inode(CInode *in, utime_t now, mds_rank_t peer,
   // no more auth subtree? clear scatter dirty
   if (!in->has_subtree_root_dirfrag(mds->get_nodeid()))
     in->clear_scatter_dirty();
-
-  in->item_open_file.remove_myself();
 
   in->clear_dirty_parent();
 
@@ -3038,6 +3036,10 @@ void Migrator::decode_import_inode(CDentry *dn, bufferlist::iterator& blp,
   in->add_replica(oldauth, CInode::EXPORT_NONCE);
   if (in->is_replica(mds->get_nodeid()))
     in->remove_replica(mds->get_nodeid());
+
+  if (in->snaplock.is_stable() &&
+      in->snaplock.get_state() != LOCK_SYNC)
+      mds->locker->try_eval(&in->snaplock, NULL);
 }
 
 void Migrator::decode_import_inode_caps(CInode *in, bool auth_cap,
@@ -3047,7 +3049,12 @@ void Migrator::decode_import_inode_caps(CInode *in, bool auth_cap,
   map<client_t,Capability::Export> cap_map;
   decode(cap_map, blp);
   if (auth_cap)
-    decode(in->get_mds_caps_wanted(), blp);
+  if (auth_cap) {
+    mempool::mds_co::compact_map<int32_t,int32_t> mds_wanted;
+    decode(mds_wanted, blp);
+    mds_wanted.erase(mds->get_nodeid());
+    in->set_mds_caps_wanted(mds_wanted);
+  }
   if (!cap_map.empty() ||
       (auth_cap && (in->get_caps_wanted() & ~CEPH_CAP_PIN))) {
     peer_exports[in].swap(cap_map);

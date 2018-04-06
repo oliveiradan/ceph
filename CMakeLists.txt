@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8.12)
 
 project(ceph CXX C ASM)
-set(VERSION 13.0.1)
+set(VERSION 13.0.2)
 
 if(POLICY CMP0046)
   # Tweak policies (this one disables "missing" dependency warning)
@@ -401,8 +401,24 @@ endif(WITH_RADOSGW)
 
 
 if (WITH_RADOSGW)
+# https://curl.haxx.se/docs/install.html mentions the
+# configure flags for various ssl backends
+  execute_process(
+    COMMAND
+  "sh" "-c"
+  "curl-config --configure | grep with-ssl"
+  RESULT_VARIABLE NO_CURL_SSL_LINK
+  ERROR_VARIABLE CURL_CONFIG_ERRORS
+  )
+  if (CURL_CONFIG_ERRORS)
+    message(WARNING "unable to run curl-config; rgw cannot make ssl requests to external systems reliably")
+  endif()
   find_package(OpenSSL)
   if (OPENSSL_FOUND)
+    if (NOT NO_CURL_SSL_LINK)
+      message(STATUS "libcurl is linked with openssl: explicitly setting locks")
+      set(WITH_CURL_OPENSSL ON)
+    endif() # CURL_SSL_LINK
     execute_process(
       COMMAND
 	"sh" "-c"
@@ -435,7 +451,7 @@ if (WITH_RADOSGW)
     message(STATUS "crypto soname: ${LIBCRYPTO_SONAME}")
   else()
     message(WARNING "ssl not found: rgw civetweb may fail to dlopen libssl libcrypto")
-  endif()
+  endif()  # OPENSSL_FOUND
 endif (WITH_RADOSGW)
 
 #option for CephFS
@@ -503,10 +519,16 @@ option(PG_DEBUG_REFS "PG Ref debugging is enabled" OFF)
 
 option(WITH_TESTS "enable the build of ceph-test package scripts/binaries" ON)
 
-option(WITH_FIO "Support for fio engines" OFF)
-if(WITH_FIO)
+# fio
+option(WITH_FIO "build with fio plugin enabled" OFF)
+option(WITH_SYSTEM_FIO "require and build with system fio" OFF)
+if(WITH_SYSTEM_FIO)
   find_package(fio REQUIRED)
-endif(WITH_FIO)
+elseif(WITH_FIO)
+  set(FIO_INCLUDE_DIR ${CMAKE_BINARY_DIR}/src/fio)
+  include(BuildFIO)
+  build_fio()
+endif()
 
 if(LINUX)
   add_definitions(-D__linux__)
@@ -564,7 +586,7 @@ option(WITH_SYSTEM_BOOST "require and build with system Boost" OFF)
 
 # Boost::thread depends on Boost::atomic, so list it explicitly.
 set(BOOST_COMPONENTS
-  atomic thread system regex random program_options date_time iostreams)
+  atomic chrono thread system regex random program_options date_time iostreams)
 set(BOOST_HEADER_COMPONENTS container)
 
 if(WITH_MGR)
@@ -593,6 +615,9 @@ else()
   include_directories(BEFORE SYSTEM ${Boost_INCLUDE_DIRS})
 endif()
 set(Boost_USE_MULTITHREADED ON)
+
+# dashboard angular2 frontend
+option(WITH_MGR_DASHBOARD_FRONTEND "Build the mgr/dashboard frontend using `npm`" ON)
 
 include_directories(SYSTEM ${PROJECT_BINARY_DIR}/include)
 
@@ -637,7 +662,7 @@ if(WITH_MANPAGE)
   add_subdirectory(man)
 endif(WITH_MANPAGE)
 
-option(WITH_SYSTEMD "install systemd target and service files" OFF)
+option(WITH_SYSTEMD "install systemd target and service files" ON)
 if(WITH_SYSTEMD)
   add_subdirectory(systemd)
 endif()

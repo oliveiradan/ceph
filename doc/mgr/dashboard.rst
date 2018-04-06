@@ -1,8 +1,35 @@
 dashboard plugin
 ================
 
-Dashboard plugin visualizes the statistics of the cluster using a web server
-hosted by ``ceph-mgr``.
+The dashboard plugin is a web application that visualizes information and
+statistics about the Ceph cluster using a web server hosted by ``ceph-mgr``.
+
+The dashboard currently provides insight into the following aspects of your
+cluster:
+
+* **Overall cluster health**: Displays the overall cluster status, storage
+  utilization (e.g. number of objects, raw capacity, usage per pool), a list of
+  pools and their status and usage statistics, access to the cluster log file.
+* **Hosts**: Provides a list of all hosts associated to the cluster, which
+  services are running and which version of Ceph is installed.
+* **Performance counters**: Displays detailed service-specific statistics for
+  each running service.
+* **Monitors**: Lists all MONs, their quorum status, open sessions.
+* **Configuration Reference**: Lists all available configuration options,
+  their description and default values.
+* **OSDs**: Lists all OSDs, their status and usage statistics as well as
+  detailed information like attributes (OSD map), metadata, performance counters
+  and usage histograms for read/write operations.
+* **iSCSI**: Lists all hosts that run the TCMU runner service, displaying all
+  images and their performance characteristics (read/write ops, traffic).
+* **RBD**: Lists all RBD images and their properties (size, objects, features)
+  in a given pool.
+* **RBD mirroring**: Lists all active sync daemons and their status, pools and
+  RBD images including their synchronization state.
+* **CephFS**: Lists all active filesystem clients and associated pools,
+  including their usage statistics.
+* **Object Gateway**: Lists all active object gateways and their performance
+  counters.
 
 Enabling
 --------
@@ -11,8 +38,22 @@ The *dashboard* module is enabled with::
 
   ceph mgr module enable dashboard
 
+This can be automated (e.g. during deployment) by adding the following to ceph.conf::
+
+  [mon]
+          mgr initial modules = dashboard
+
+Note that ``mgr initial modules`` takes a space-separated list of modules, so
+if you wanted to include other modules in addition to dashboard, just make it
+a list like so::
+
+          mgr initial modules = balancer dashboard
+
 Configuration
 -------------
+
+Host name and port
+^^^^^^^^^^^^^^^^^^
 
 Like most web applications, dashboard binds to a host name and port.
 By default, the ``ceph-mgr`` daemon hosting the dashboard (i.e., the
@@ -39,6 +80,33 @@ If the port is not configured, the web app will bind to port ``7000``.
 If the address it not configured, the web app will bind to ``::``,
 which corresponds to all available IPv4 and IPv6 addresses.
 
+If in doubt which URL to use to access the dashboard, the ``ceph mgr services``
+command will show the endpoints currently configured (look for the "dashboard"
+key).
+
+Username and password
+^^^^^^^^^^^^^^^^^^^^^
+
+In order to be able to log in, you need to define a username and password, which
+will be stored in the MON's configuration database::
+
+  ceph dashboard set-login-credentials <username> <password>
+
+The password will be stored in the configuration database in encrypted form
+using ``bcrypt``. This is a global setting that applies to all dashboard instances.
+
+Accessing the dashboard
+^^^^^^^^^^^^^^^^^^^^^^^
+
+You can now access the dashboard using your (JavaScript-enabled) web browser, by
+pointing it to any of the host names or IP addresses and the selected TCP port
+where a manager instance is running: e.g., ``http://<$IP>:<$PORT>/``.
+
+You should then be greeted by the dashboard login page, requesting your
+previously defined username and password. Select the **Keep me logged in**
+checkbox if you want to skip the username/password request when accessing the
+dashboard in the future.
+
 Reverse proxies
 ---------------
 
@@ -52,4 +120,3 @@ to use hyperlinks that include your prefix, you can set the
   ceph config-key set mgr/dashboard/url_prefix $PREFIX
 
 so you can access the dashboard at ``http://$IP:$PORT/$PREFIX/``.
-

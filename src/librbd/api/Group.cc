@@ -398,6 +398,10 @@ int Group<I>::remove(librados::IoCtx& io_ctx, const char *group_name)
 
   std::vector<cls::rbd::GroupSnapshot> snaps;
   r = group_snap_list(io_ctx, group_name, &snaps);
+  if (r < 0 && r != -ENOENT) {
+    lderr(cct) << "error listing group snapshots" << dendl;
+    return r;
+  }
 
   for (auto &snap : snaps) {
     r = group_snap_remove_by_record(io_ctx, snap, group_id, group_header_oid);
@@ -630,6 +634,34 @@ int Group<I>::image_list(librados::IoCtx& group_ioctx,
 
   return 0;
 }
+
+template <typename I>
+int Group<I>::rename(librados::IoCtx& io_ctx, const char *src_name,
+                     const char *dest_name)
+{
+  CephContext *cct((CephContext *)io_ctx.cct());
+  ldout(cct, 20) << "group_rename " << &io_ctx << " " << src_name
+                 << " -> " << dest_name << dendl;
+
+  std::string group_id;
+  int r = cls_client::dir_get_id(&io_ctx, RBD_GROUP_DIRECTORY,
+                                 std::string(src_name), &group_id);
+  if (r < 0) {
+    if (r != -ENOENT)
+      lderr(cct) << "error getting id of group" << dendl;
+    return r;
+  }
+
+  r = cls_client::group_dir_rename(&io_ctx, RBD_GROUP_DIRECTORY,
+                                   src_name, dest_name, group_id);
+  if (r < 0 && r != -ENOENT) {
+    lderr(cct) << "error renaming group from directory" << dendl;
+    return r;
+  }
+
+  return 0;
+}
+
 
 template <typename I>
 int Group<I>::image_get_group(I *ictx, group_info_t *group_info)

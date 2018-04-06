@@ -365,14 +365,13 @@ WRITE_CLASS_ENCODER(old_pg_t)
 struct pg_t {
   uint64_t m_pool;
   uint32_t m_seed;
-  int32_t m_preferred;
 
-  pg_t() : m_pool(0), m_seed(0), m_preferred(-1) {}
-  pg_t(ps_t seed, uint64_t pool, int pref=-1) :
-    m_pool(pool), m_seed(seed), m_preferred(pref) {}
+  pg_t() : m_pool(0), m_seed(0) {}
+  pg_t(ps_t seed, uint64_t pool) :
+    m_pool(pool), m_seed(seed) {}
   // cppcheck-suppress noExplicitConstructor
   pg_t(const ceph_pg& cpg) :
-    m_pool(cpg.pool), m_seed(cpg.ps), m_preferred((__s16)cpg.preferred) {}
+    m_pool(cpg.pool), m_seed(cpg.ps) {}
 
   // cppcheck-suppress noExplicitConstructor
   pg_t(const old_pg_t& opg) {
@@ -384,7 +383,7 @@ struct pg_t {
     assert(m_pool < 0xffffffffull);
     o.v.pool = m_pool;
     o.v.ps = m_seed;
-    o.v.preferred = (__s16)m_preferred;
+    o.v.preferred = (__s16)-1;
     return o;
   }
 
@@ -393,9 +392,6 @@ struct pg_t {
   }
   uint64_t pool() const {
     return m_pool;
-  }
-  int32_t preferred() const {
-    return m_preferred;
   }
 
   static const uint8_t calc_name_buf_size = 36;  // max length for max values len("18446744073709551615.ffffffff") + future suffix len("_head") + '\0'
@@ -406,9 +402,6 @@ struct pg_t {
   }
   void set_pool(uint64_t p) {
     m_pool = p;
-  }
-  void set_preferred(int32_t osd) {
-    m_preferred = osd;
   }
 
   pg_t get_parent() const;
@@ -441,7 +434,7 @@ struct pg_t {
     encode(v, bl);
     encode(m_pool, bl);
     encode(m_seed, bl);
-    encode(m_preferred, bl);
+    encode((int32_t)-1, bl); // was preferred
   }
   void decode(bufferlist::iterator& bl) {
     using ceph::decode;
@@ -449,7 +442,7 @@ struct pg_t {
     decode(v, bl);
     decode(m_pool, bl);
     decode(m_seed, bl);
-    decode(m_preferred, bl);
+    bl.advance(sizeof(int32_t)); // was preferred
   }
   void decode_old(bufferlist::iterator& bl) {
     using ceph::decode;
@@ -464,33 +457,27 @@ WRITE_CLASS_ENCODER(pg_t)
 
 inline bool operator<(const pg_t& l, const pg_t& r) {
   return l.pool() < r.pool() ||
-    (l.pool() == r.pool() && (l.preferred() < r.preferred() ||
-			      (l.preferred() == r.preferred() && (l.ps() < r.ps()))));
+    (l.pool() == r.pool() && (l.ps() < r.ps()));
 }
 inline bool operator<=(const pg_t& l, const pg_t& r) {
   return l.pool() < r.pool() ||
-    (l.pool() == r.pool() && (l.preferred() < r.preferred() ||
-			      (l.preferred() == r.preferred() && (l.ps() <= r.ps()))));
+    (l.pool() == r.pool() && (l.ps() <= r.ps()));
 }
 inline bool operator==(const pg_t& l, const pg_t& r) {
   return l.pool() == r.pool() &&
-    l.preferred() == r.preferred() &&
     l.ps() == r.ps();
 }
 inline bool operator!=(const pg_t& l, const pg_t& r) {
   return l.pool() != r.pool() ||
-    l.preferred() != r.preferred() ||
     l.ps() != r.ps();
 }
 inline bool operator>(const pg_t& l, const pg_t& r) {
   return l.pool() > r.pool() ||
-    (l.pool() == r.pool() && (l.preferred() > r.preferred() ||
-			      (l.preferred() == r.preferred() && (l.ps() > r.ps()))));
+    (l.pool() == r.pool() && (l.ps() > r.ps()));
 }
 inline bool operator>=(const pg_t& l, const pg_t& r) {
   return l.pool() > r.pool() ||
-    (l.pool() == r.pool() && (l.preferred() > r.preferred() ||
-			      (l.preferred() == r.preferred() && (l.ps() >= r.ps()))));
+    (l.pool() == r.pool() && (l.ps() >= r.ps()));
 }
 
 ostream& operator<<(ostream& out, const pg_t &pg);
@@ -501,7 +488,8 @@ namespace std {
     size_t operator()( const pg_t& x ) const
     {
       static hash<uint32_t> H;
-      return H((x.pool() & 0xffffffff) ^ (x.pool() >> 32) ^ x.ps() ^ x.preferred());
+      // xor (s32)-1 in there to preserve original m_preferred result (paranoia!)
+      return H((x.pool() & 0xffffffff) ^ (x.pool() >> 32) ^ x.ps() ^ (int32_t)(-1));
     }
   };
 } // namespace std
@@ -523,9 +511,6 @@ struct spg_t {
   }
   uint64_t pool() const {
     return pgid.pool();
-  }
-  int32_t preferred() const {
-    return pgid.preferred();
   }
 
   static const uint8_t calc_name_buf_size = pg_t::calc_name_buf_size + 4; // 36 + len('s') + len("255");
@@ -836,6 +821,7 @@ public:
 #if defined(CEPH_LITTLE_ENDIAN)
     bl.append((char *)this, sizeof(version_t) + sizeof(epoch_t));
 #else
+    using ceph::encode;
     encode(version, bl);
     encode(epoch, bl);
 #endif
@@ -844,6 +830,7 @@ public:
 #if defined(CEPH_LITTLE_ENDIAN)
     bl.copy(sizeof(version_t) + sizeof(epoch_t), (char *)this);
 #else
+    using ceph::decode;
     decode(version, bl);
     decode(epoch, bl);
 #endif
@@ -1679,6 +1666,7 @@ struct object_stat_sum_t {
   int64_t num_objects_missing;
   int64_t num_legacy_snapsets; ///< upper bound on pre-luminous-style SnapSets
   int64_t num_large_omap_objects = 0;
+  int64_t num_objects_manifest = 0;
 
   object_stat_sum_t()
     : num_bytes(0),
@@ -1725,10 +1713,11 @@ struct object_stat_sum_t {
     FLOOR(num_rd_kb);
     FLOOR(num_wr);
     FLOOR(num_wr_kb);
-    FLOOR(num_scrub_errors);
     FLOOR(num_large_omap_objects);
+    FLOOR(num_objects_manifest);
     FLOOR(num_shallow_scrub_errors);
     FLOOR(num_deep_scrub_errors);
+    num_scrub_errors = num_shallow_scrub_errors + num_deep_scrub_errors;
     FLOOR(num_objects_recovered);
     FLOOR(num_bytes_recovered);
     FLOOR(num_keys_recovered);
@@ -1780,10 +1769,14 @@ struct object_stat_sum_t {
     SPLIT(num_rd_kb);
     SPLIT(num_wr);
     SPLIT(num_wr_kb);
-    SPLIT(num_scrub_errors);
     SPLIT(num_large_omap_objects);
-    SPLIT(num_shallow_scrub_errors);
-    SPLIT(num_deep_scrub_errors);
+    SPLIT(num_objects_manifest);
+    SPLIT_PRESERVE_NONZERO(num_shallow_scrub_errors);
+    SPLIT_PRESERVE_NONZERO(num_deep_scrub_errors);
+    for (unsigned i = 0; i < out.size(); ++i) {
+      out[i].num_scrub_errors = out[i].num_shallow_scrub_errors +
+				out[i].num_deep_scrub_errors;
+    }
     SPLIT(num_objects_recovered);
     SPLIT(num_bytes_recovered);
     SPLIT(num_keys_recovered);
@@ -1839,6 +1832,7 @@ struct object_stat_sum_t {
         sizeof(num_wr_kb) +
         sizeof(num_scrub_errors) +
         sizeof(num_large_omap_objects) +
+        sizeof(num_objects_manifest) +
         sizeof(num_objects_recovered) +
         sizeof(num_bytes_recovered) +
         sizeof(num_keys_recovered) +
@@ -1989,6 +1983,7 @@ struct pg_stat_t {
   bool hitset_stats_invalid:1;
   bool hitset_bytes_stats_invalid:1;
   bool pin_stats_invalid:1;
+  bool manifest_stats_invalid:1;
 
   pg_stat_t()
     : reported_seq(0),
@@ -2006,7 +2001,8 @@ struct pg_stat_t {
       omap_stats_invalid(false),
       hitset_stats_invalid(false),
       hitset_bytes_stats_invalid(false),
-      pin_stats_invalid(false)
+      pin_stats_invalid(false),
+      manifest_stats_invalid(false)
   { }
 
   epoch_t get_effective_last_epoch_clean() const {
@@ -2037,11 +2033,8 @@ struct pg_stat_t {
     stats.add(o.stats);
     log_size += o.log_size;
     ondisk_log_size += o.ondisk_log_size;
-    if (((uint64_t)snaptrimq_len + (uint64_t)o.snaptrimq_len) > (uint64_t)(1 << 31)) {
-      snaptrimq_len = 1 << 31;
-    } else {
-      snaptrimq_len += o.snaptrimq_len;
-    }
+    snaptrimq_len = std::min((uint64_t)snaptrimq_len + o.snaptrimq_len,
+                             (uint64_t)(1ull << 31));
   }
   void sub(const pg_stat_t& o) {
     stats.sub(o.stats);
@@ -3322,7 +3315,7 @@ struct pg_log_entry_t {
     MODIFY = 1,   // some unspecified modification (but not *all* modifications)
     CLONE = 2,    // cloned object from head
     DELETE = 3,   // deleted object
-    BACKLOG = 4,  // event invented by generate_backlog [deprecated]
+    //BACKLOG = 4,  // event invented by generate_backlog [obsolete]
     LOST_REVERT = 5, // lost new version, revert to an older version.
     LOST_DELETE = 6, // lost new version, revert to no object (deleted).
     LOST_MARK = 7,   // lost new version, now EIO
@@ -3340,8 +3333,6 @@ struct pg_log_entry_t {
       return "clone";
     case DELETE:
       return "delete";
-    case BACKLOG:
-      return "backlog";
     case LOST_REVERT:
       return "l_revert";
     case LOST_DELETE:
@@ -3395,7 +3386,6 @@ struct pg_log_entry_t {
   bool is_modify() const { return op == MODIFY; }
   bool is_promote() const { return op == PROMOTE; }
   bool is_clean() const { return op == CLEAN; }
-  bool is_backlog() const { return op == BACKLOG; }
   bool is_lost_revert() const { return op == LOST_REVERT; }
   bool is_lost_delete() const { return op == LOST_DELETE; }
   bool is_lost_mark() const { return op == LOST_MARK; }
@@ -3404,7 +3394,7 @@ struct pg_log_entry_t {
   bool is_update() const {
     return
       is_clone() || is_modify() || is_promote() || is_clean() ||
-      is_backlog() || is_lost_revert() || is_lost_mark();
+      is_lost_revert() || is_lost_mark();
   }
   bool is_delete() const {
     return op == DELETE || op == LOST_DELETE;
@@ -3918,9 +3908,6 @@ public:
       rmissing.erase((missing_it->second).need.version);
       (missing_it->second).need = e.version;  // leave .have unchanged.
       missing_it->second.set_delete(e.is_delete());
-    } else if (e.is_backlog()) {
-      // May not have prior version
-      assert(0 == "these don't exist anymore");
     } else {
       // not missing, we must have prior_version (if any)
       assert(!is_missing_divergent_item);

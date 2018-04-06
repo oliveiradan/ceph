@@ -1,10 +1,5 @@
 // -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
 // vim: ts=8 sw=2 smarttab
-
-extern "C" {
-#include <curl/curl.h>
-}
-
 #include "common/ceph_argparse.h"
 #include "global/global_init.h"
 #include "global/signal_handler.h"
@@ -12,6 +7,7 @@ extern "C" {
 #include "common/errno.h"
 #include "common/Timer.h"
 #include "common/safe_io.h"
+#include "common/TracepointProvider.h"
 #include "include/compat.h"
 #include "include/str_list.h"
 #include "include/stringify.h"
@@ -40,6 +36,7 @@ extern "C" {
 #include "rgw_request.h"
 #include "rgw_process.h"
 #include "rgw_frontend.h"
+#include "rgw_http_client_curl.h"
 #if defined(WITH_RADOSGW_BEAST_FRONTEND)
 #include "rgw_asio_frontend.h"
 #endif /* WITH_RADOSGW_BEAST_FRONTEND */
@@ -50,6 +47,12 @@ extern "C" {
 
 #define dout_subsys ceph_subsys_rgw
 
+namespace {
+TracepointProvider::Traits rgw_op_tracepoint_traits("librgw_op_tp.so",
+                                                 "rgw_op_tracing");
+TracepointProvider::Traits rgw_rados_tracepoint_traits("librgw_rados_tp.so",
+                                                 "rgw_rados_tracing");
+}
 
 static sig_t sighandler_alrm;
 
@@ -114,17 +117,6 @@ static void godown_alarm(int signum)
   _exit(0);
 }
 
-#ifdef HAVE_CURL_MULTI_WAIT
-static void check_curl()
-{
-}
-#else
-static void check_curl()
-{
-  derr << "WARNING: libcurl doesn't support curl_multi_wait()" << dendl;
-  derr << "WARNING: cross zone / region transfer performance may be affected" << dendl;
-}
-#endif
 
 class C_InitTimeout : public Context {
 public:
@@ -137,15 +129,15 @@ public:
 
 static int usage()
 {
-  cerr << "usage: radosgw [options...]" << std::endl;
-  cerr << "options:\n";
-  cerr << "  --rgw-region=<region>     region in which radosgw runs\n";
-  cerr << "  --rgw-zone=<zone>         zone in which radosgw runs\n";
-  cerr << "  --rgw-socket-path=<path>  specify a unix domain socket path\n";
-  cerr << "  -m monaddress[:port]      connect to specified monitor\n";
-  cerr << "  --keyring=<path>          path to radosgw keyring\n";
-  cerr << "  --logfile=<logfile>       file to log debug output\n";
-  cerr << "  --debug-rgw=<log-level>/<memory-level>  set radosgw debug level\n";
+  cout << "usage: radosgw [options...]" << std::endl;
+  cout << "options:\n";
+  cout << "  --rgw-region=<region>     region in which radosgw runs\n";
+  cout << "  --rgw-zone=<zone>         zone in which radosgw runs\n";
+  cout << "  --rgw-socket-path=<path>  specify a unix domain socket path\n";
+  cout << "  -m monaddress[:port]      connect to specified monitor\n";
+  cout << "  --keyring=<path>          path to radosgw keyring\n";
+  cout << "  --logfile=<logfile>       file to log debug output\n";
+  cout << "  --debug-rgw=<log-level>/<memory-level>  set radosgw debug level\n";
   generic_server_usage();
 
   return 0;
@@ -160,7 +152,11 @@ static RGWRESTMgr *set_logging(RGWRESTMgr *mgr)
 static RGWRESTMgr *rest_filter(RGWRados *store, int dialect, RGWRESTMgr *orig)
 {
   RGWSyncModuleInstanceRef sync_module = store->get_sync_module();
-  return sync_module->get_rest_filter(dialect, orig);
+  if (sync_module) {
+    return sync_module->get_rest_filter(dialect, orig);
+  } else {
+    return orig;
+  }
 }
 
 /*
@@ -183,18 +179,27 @@ int main(int argc, const char **argv)
   }
 
   /* alternative default for module */
-  vector<const char *> def_args;
-  def_args.push_back("--debug-rgw=1/5");
-  def_args.push_back("--keyring=$rgw_data/keyring");
+  map<string,string> defaults = {
+    { "debug_rgw", "1/5" },
+    { "keyring", "$rgw_data/keyring" }
+  };
 
   vector<const char*> args;
   argv_to_vec(argc, argv, args);
-  env_to_vec(args);
+  if (args.empty()) {
+    cerr << argv[0] << ": -h or --help for usage" << std::endl;
+    exit(1);
+  }
+  if (ceph_argparse_need_usage(args)) {
+    usage();
+    exit(0);
+  }
 
   // First, let's determine which frontends are configured.
   int flags = CINIT_FLAG_UNPRIVILEGED_DAEMON_DEFAULTS;
-  global_pre_init(&def_args, args, CEPH_ENTITY_TYPE_CLIENT, CODE_ENVIRONMENT_DAEMON,
-          flags);
+  global_pre_init(
+    &defaults, args, CEPH_ENTITY_TYPE_CLIENT, CODE_ENVIRONMENT_DAEMON,
+    flags);
 
   list<string> frontends;
   g_conf->early_expand_meta(g_conf->rgw_frontends, &cerr);
@@ -240,16 +245,9 @@ int main(int argc, const char **argv)
   // initialization. Passing false as the final argument ensures that
   // global_pre_init() is not invoked twice.
   // claim the reference and release it after subsequent destructors have fired
-  auto cct = global_init(&def_args, args, CEPH_ENTITY_TYPE_CLIENT,
+  auto cct = global_init(&defaults, args, CEPH_ENTITY_TYPE_CLIENT,
 			 CODE_ENVIRONMENT_DAEMON,
 			 flags, "rgw_data", false);
-
-  for (std::vector<const char*>::iterator i = args.begin(); i != args.end(); ++i) {
-    if (ceph_argparse_flag(args, i, "-h", "--help", (char*)NULL)) {
-      usage();
-      return 0;
-    }
-  }
 
   // maintain existing region root pool for new multisite objects
   if (!g_conf->rgw_region_root_pool.empty()) {
@@ -270,8 +268,6 @@ int main(int argc, const char **argv)
     g_conf->set_val_or_die("rgw_zonegroup", g_conf->rgw_region.c_str());
   }
 
-  check_curl();
-
   if (g_conf->daemonize) {
     global_init_daemonize(g_ceph_context);
   }
@@ -290,6 +286,9 @@ int main(int argc, const char **argv)
   init_async_signal_handler();
   register_async_signal_handler(SIGHUP, sighup_handler);
 
+  TracepointProvider::initialize<rgw_rados_tracepoint_traits>(g_ceph_context);
+  TracepointProvider::initialize<rgw_op_tracepoint_traits>(g_ceph_context);
+
   int r = rgw_tools_init(g_ceph_context);
   if (r < 0) {
     derr << "ERROR: unable to initialize rgw tools" << dendl;
@@ -297,9 +296,8 @@ int main(int argc, const char **argv)
   }
 
   rgw_init_resolver();
-  
-  curl_global_init(CURL_GLOBAL_ALL);
-  
+  rgw::curl::setup_curl(fe_map);
+
 #if defined(WITH_RADOSGW_FCGI_FRONTEND)
   FCGX_Init();
 #endif
@@ -572,7 +570,7 @@ int main(int argc, const char **argv)
   rgw::auth::s3::LDAPEngine::shutdown();
   rgw_tools_cleanup();
   rgw_shutdown_resolver();
-  curl_global_cleanup();
+  rgw::curl::cleanup_curl();
 
   rgw_perf_stop(g_ceph_context);
 
