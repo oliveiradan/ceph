@@ -40,30 +40,10 @@ std::string handle_pyerror()
     object traceback(import("traceback"));
     if (!tb) {
         object format_exception_only(traceback.attr("format_exception_only"));
-        try {
-          formatted_list = format_exception_only(hexc, hval);
-        } catch (error_already_set const &) {
-          // error while processing exception object
-          // returning only the exception string value
-          PyObject *name_attr = PyObject_GetAttrString(exc, "__name__");
-          std::stringstream ss;
-          ss << PyString_AsString(name_attr) << ": " << PyString_AsString(val);
-          Py_XDECREF(name_attr);
-          return ss.str();
-        }
+        formatted_list = format_exception_only(hexc, hval);
     } else {
         object format_exception(traceback.attr("format_exception"));
-        try {
-          formatted_list = format_exception(hexc, hval, htb);
-        } catch (error_already_set const &) {
-          // error while processing exception object
-          // returning only the exception string value
-          PyObject *name_attr = PyObject_GetAttrString(exc, "__name__");
-          std::stringstream ss;
-          ss << PyString_AsString(name_attr) << ": " << PyString_AsString(val);
-          Py_XDECREF(name_attr);
-          return ss.str();
-        }
+        formatted_list = format_exception(hexc,hval, htb);
     }
     formatted = str("").join(formatted_list);
     return extract<std::string>(formatted);

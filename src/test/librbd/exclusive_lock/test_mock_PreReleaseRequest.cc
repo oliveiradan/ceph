@@ -6,7 +6,6 @@
 #include "test/librbd/mock/MockImageCtx.h"
 #include "test/librbd/mock/MockJournal.h"
 #include "test/librbd/mock/MockObjectMap.h"
-#include "test/librbd/mock/io/MockObjectDispatch.h"
 #include "test/librados_test_stub/MockTestMemIoCtxImpl.h"
 #include "common/AsyncOpTracker.h"
 #include "librbd/exclusive_lock/PreReleaseRequest.h"
@@ -95,10 +94,19 @@ public:
                   .WillOnce(CompleteContext(0, mock_image_ctx.image_ctx->op_work_queue));
   }
 
-  void expect_invalidate_cache(MockImageCtx &mock_image_ctx,
+  void expect_invalidate_cache(MockImageCtx &mock_image_ctx, bool purge,
                                int r) {
-    EXPECT_CALL(*mock_image_ctx.io_object_dispatcher, invalidate_cache(_))
-      .WillOnce(CompleteContext(r, mock_image_ctx.image_ctx->op_work_queue));
+    if (mock_image_ctx.object_cacher != nullptr) {
+      EXPECT_CALL(mock_image_ctx, invalidate_cache(purge, _))
+                    .WillOnce(WithArg<1>(CompleteContext(r, static_cast<ContextWQ*>(NULL)))); 
+    }
+  }
+
+  void expect_is_cache_empty(MockImageCtx &mock_image_ctx, bool empty) {
+    if (mock_image_ctx.object_cacher != nullptr) {
+      EXPECT_CALL(mock_image_ctx, is_cache_empty())
+        .WillOnce(Return(empty));
+    }
   }
 
   void expect_flush_notifies(MockImageCtx &mock_image_ctx) {
@@ -134,8 +142,7 @@ TEST_F(TestMockExclusiveLockPreReleaseRequest, Success) {
   expect_prepare_lock(mock_image_ctx);
   expect_cancel_op_requests(mock_image_ctx, 0);
   expect_block_writes(mock_image_ctx, 0);
-  expect_invalidate_cache(mock_image_ctx, 0);
-
+  expect_invalidate_cache(mock_image_ctx, false, 0);
   expect_flush_notifies(mock_image_ctx);
 
   MockJournal *mock_journal = new MockJournal();
@@ -169,8 +176,7 @@ TEST_F(TestMockExclusiveLockPreReleaseRequest, SuccessJournalDisabled) {
   InSequence seq;
   expect_prepare_lock(mock_image_ctx);
   expect_cancel_op_requests(mock_image_ctx, 0);
-  expect_invalidate_cache(mock_image_ctx, 0);
-
+  expect_invalidate_cache(mock_image_ctx, false, 0);
   expect_flush_notifies(mock_image_ctx);
 
   MockObjectMap *mock_object_map = new MockObjectMap();
@@ -199,8 +205,7 @@ TEST_F(TestMockExclusiveLockPreReleaseRequest, SuccessObjectMapDisabled) {
 
   InSequence seq;
   expect_cancel_op_requests(mock_image_ctx, 0);
-  expect_invalidate_cache(mock_image_ctx, 0);
-
+  expect_invalidate_cache(mock_image_ctx, false, 0);
   expect_flush_notifies(mock_image_ctx);
 
   C_SaferCond release_ctx;
@@ -224,8 +229,10 @@ TEST_F(TestMockExclusiveLockPreReleaseRequest, Blacklisted) {
   expect_prepare_lock(mock_image_ctx);
   expect_cancel_op_requests(mock_image_ctx, 0);
   expect_block_writes(mock_image_ctx, -EBLACKLISTED);
-  expect_invalidate_cache(mock_image_ctx, -EBLACKLISTED);
-
+  expect_invalidate_cache(mock_image_ctx, false, -EBLACKLISTED);
+  expect_is_cache_empty(mock_image_ctx, false);
+  expect_invalidate_cache(mock_image_ctx, true, -EBLACKLISTED);
+  expect_is_cache_empty(mock_image_ctx, true);
   expect_flush_notifies(mock_image_ctx);
 
   MockJournal *mock_journal = new MockJournal();
@@ -280,8 +287,7 @@ TEST_F(TestMockExclusiveLockPreReleaseRequest, UnlockError) {
   InSequence seq;
   expect_cancel_op_requests(mock_image_ctx, 0);
   expect_block_writes(mock_image_ctx, 0);
-  expect_invalidate_cache(mock_image_ctx, 0);
-
+  expect_invalidate_cache(mock_image_ctx, false, 0);
   expect_flush_notifies(mock_image_ctx);
 
   C_SaferCond ctx;

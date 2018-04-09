@@ -4,7 +4,6 @@
 #include "librbd/operation/ObjectMapIterate.h"
 #include "common/dout.h"
 #include "common/errno.h"
-#include "osdc/Striper.h"
 #include "librbd/AsyncObjectThrottle.h"
 #include "librbd/ExclusiveLock.h"
 #include "librbd/ImageCtx.h"

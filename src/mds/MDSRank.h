@@ -71,9 +71,6 @@ enum {
   l_mds_exported_inodes,
   l_mds_imported,
   l_mds_imported_inodes,
-  l_mds_openino_dir_fetch,
-  l_mds_openino_backtrace_fetch,
-  l_mds_openino_peer_discover,
   l_mds_last,
 };
 
@@ -140,14 +137,6 @@ class MDSRank {
     // carry around references to the outer MDS, and we can substitute
     // a separate lock here in future potentially.
     Mutex &mds_lock;
-
-    mono_time get_starttime() const {
-      return starttime;
-    }
-    chrono::duration<double> get_uptime() const {
-      mono_time now = mono_clock::now();
-      return chrono::duration<double>(now-starttime);
-    }
 
     class CephContext *cct;
 
@@ -452,7 +441,6 @@ class MDSRank {
         const cmdmap_t &cmdmap,
         std::ostream &ss);
     void command_openfiles_ls(Formatter *f);
-    void command_dump_tree(const cmdmap_t &cmdmap, std::ostream &ss, Formatter *f);
 
   protected:
     Messenger    *messenger;
@@ -522,9 +510,6 @@ class MDSRank {
 
     /* Update MDSMap export_targets for this rank. Called on ::tick(). */
     void update_targets(utime_t now);
-
-private:
-    mono_time starttime = mono_clock::zero();
 };
 
 /* This expects to be given a reference which it is responsible for.

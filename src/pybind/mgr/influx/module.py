@@ -45,7 +45,7 @@ class Module(MgrModule):
         'database': 'ceph',
         'username': None,
         'password': None,
-        'interval': 30,
+        'interval': 5,
         'ssl': 'false',
         'verify_ssl': 'true'
     }
@@ -77,8 +77,6 @@ class Module(MgrModule):
         df = self.get("df")
         data = []
 
-        now = datetime.utcnow().isoformat() + 'Z'
-
         df_types = [
             'bytes_used',
             'kb_used',
@@ -104,7 +102,7 @@ class Module(MgrModule):
                         "type_instance": df_type,
                         "fsid": self.get_fsid()
                     },
-                    "time": now,
+                    "time": datetime.utcnow().isoformat() + 'Z',
                     "fields": {
                         "value": pool['stats'][df_type],
                     }
@@ -114,8 +112,6 @@ class Module(MgrModule):
 
     def get_daemon_stats(self):
         data = []
-
-        now = datetime.utcnow().isoformat() + 'Z'
 
         for daemon, counters in self.get_all_perf_counters().iteritems():
             svc_type, svc_id = daemon.split(".")
@@ -135,7 +131,7 @@ class Module(MgrModule):
                         "host": metadata['hostname'],
                         "fsid": self.get_fsid()
                     },
-                    "time": now,
+                    "time": datetime.utcnow().isoformat() + 'Z',
                     "fields": {
                         "value": value
                     }
@@ -234,9 +230,6 @@ class Module(MgrModule):
                               "'%s'", self.config['database'],
                               self.config['username'])
                 client.create_database(self.config['database'])
-                client.create_retention_policy(name='8_weeks', duration='8w',
-                                               replication='1', default=True,
-                                               database=self.config['database'])
             else:
                 self.set_health_checks({
                     'MGR_INFLUX_SEND_FAILED': {

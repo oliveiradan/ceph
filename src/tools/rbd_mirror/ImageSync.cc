@@ -4,7 +4,6 @@
 #include "ImageSync.h"
 #include "InstanceWatcher.h"
 #include "ProgressContext.h"
-#include "common/debug.h"
 #include "common/Timer.h"
 #include "common/errno.h"
 #include "journal/Journaler.h"

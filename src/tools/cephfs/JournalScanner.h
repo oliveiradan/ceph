@@ -36,7 +36,6 @@ class JournalScanner
 
   // Input constraints
   const int rank;
-  std::string type;
   JournalFilter const filter;
 
   void gap_advance();
@@ -45,13 +44,10 @@ class JournalScanner
   JournalScanner(
       librados::IoCtx &io_,
       int rank_,
-      const std::string &type_,
       JournalFilter const &filter_) :
     io(io_),
     rank(rank_),
-    type(type_),
     filter(filter_),
-    is_mdlog(false),
     pointer_present(false),
     pointer_valid(false),
     header_present(false),
@@ -60,12 +56,9 @@ class JournalScanner
 
   JournalScanner(
       librados::IoCtx &io_,
-      int rank_,
-      const std::string &type_) :
+      int rank_) :
     io(io_),
     rank(rank_),
-    type(type_),
-    is_mdlog(false),
     pointer_present(false),
     pointer_valid(false),
     header_present(false),
@@ -74,7 +67,6 @@ class JournalScanner
 
   ~JournalScanner();
 
-  int set_journal_ino();
   int scan(bool const full=true);
   int scan_pointer();
   int scan_header();
@@ -85,7 +77,7 @@ class JournalScanner
   std::string obj_name(inodeno_t ino, uint64_t offset) const;
 
   // The results of the scan
-  inodeno_t ino;  // Corresponds to journal ino according their type
+  inodeno_t ino;  // Corresponds to JournalPointer.front
   class EventRecord {
     public:
     EventRecord() : log_event(NULL), raw_size(0) {}
@@ -105,9 +97,8 @@ class JournalScanner
   typedef std::map<uint64_t, EventRecord> EventMap;
   typedef std::map<uint64_t, EventError> ErrorMap;
   typedef std::pair<uint64_t, uint64_t> Range;
-  bool is_mdlog;
-  bool pointer_present; //mdlog specific
-  bool pointer_valid;   //mdlog specific
+  bool pointer_present;
+  bool pointer_valid;
   bool header_present;
   bool header_valid;
   Journaler::Header *header;

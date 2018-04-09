@@ -13,7 +13,6 @@
  */
 
 #include "Capability.h"
-#include "CInode.h"
 
 #include "common/Formatter.h"
 
@@ -142,17 +141,6 @@ void Capability::revoke_info::generate_test_instances(list<Capability::revoke_in
  * Capability
  */
 
-void Capability::set_wanted(int w) {
-  CInode *in = get_inode();
-  if (in) {
-    if (!_wanted && w)
-      in->adjust_num_caps_wanted(1);
-    else if (_wanted && !w)
-      in->adjust_num_caps_wanted(-1);
-  }
-  _wanted = w;
-}
-
 void Capability::encode(bufferlist& bl) const
 {
   ENCODE_START(2, 2, bl)
@@ -171,9 +159,7 @@ void Capability::decode(bufferlist::iterator &bl)
   decode(last_sent, bl);
   decode(last_issue_stamp, bl);
 
-  __u32 tmp_wanted;
-  decode(tmp_wanted, bl);
-  set_wanted(tmp_wanted);
+  decode(_wanted, bl);
   decode(_pending, bl);
   decode(_revokes, bl);
   DECODE_FINISH(bl);
@@ -203,7 +189,7 @@ void Capability::generate_test_instances(list<Capability*>& ls)
   ls.push_back(new Capability);
   ls.back()->last_sent = 11;
   ls.back()->last_issue_stamp = utime_t(12, 13);
-  ls.back()->set_wanted(14);
+  ls.back()->_wanted = 14;
   ls.back()->_pending = 15;
   {
     auto &r = ls.back()->_revokes.emplace_back();

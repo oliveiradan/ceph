@@ -204,9 +204,8 @@ Mirror::Mirror(CephContext *cct, const std::vector<const char*> &args) :
   m_local(new librados::Rados()),
   m_asok_hook(new MirrorAdminSocketHook(cct, this))
 {
-  m_threads =
-    &(cct->lookup_or_create_singleton_object<Threads<librbd::ImageCtx>>(
-	"rbd_mirror::threads", false, cct));
+  cct->lookup_or_create_singleton_object<Threads<librbd::ImageCtx> >(
+    m_threads, "rbd_mirror::threads");
   m_service_daemon.reset(new ServiceDaemon<>(m_cct, m_local, m_threads));
 }
 

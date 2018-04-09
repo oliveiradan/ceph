@@ -66,18 +66,8 @@ struct BackTrace;
 extern void register_assert_context(CephContext *cct);
 #endif
 
-struct assert_data {
-  const char *assertion;
-  const char *file;
-  const int line;
-  const char *function;
-};
-
 extern void __ceph_assert_fail(const char *assertion, const char *file, int line, const char *function)
   __attribute__ ((__noreturn__));
-extern void __ceph_assert_fail(const assert_data &ctx)
-  __attribute__ ((__noreturn__));
-
 extern void __ceph_assertf_fail(const char *assertion, const char *file, int line, const char *function, const char* msg, ...)
   __attribute__ ((__noreturn__));
 extern void __ceph_assert_warn(const char *assertion, const char *file, int line, const char *function);
@@ -131,28 +121,21 @@ using namespace ceph;
 #undef __ASSERT_FUNCTION
 #define __ASSERT_FUNCTION
 
-#define assert(expr) \
-  do { static const ceph::assert_data assert_data_ctx = \
-   {__STRING(expr), __FILE__, __LINE__, __CEPH_ASSERT_FUNCTION}; \
-   ((expr) \
-   ? _CEPH_ASSERT_VOID_CAST (0)	\
-   : __ceph_assert_fail(assert_data_ctx)); } while(false)
-
+#define assert(expr)							\
+  ((expr)								\
+   ? _CEPH_ASSERT_VOID_CAST (0)					\
+   : __ceph_assert_fail (__STRING(expr), __FILE__, __LINE__, __CEPH_ASSERT_FUNCTION))
 #define ceph_assert(expr)							\
-  do { static const ceph::assert_data assert_data_ctx = \
-   {__STRING(expr), __FILE__, __LINE__, __CEPH_ASSERT_FUNCTION}; \
-   ((expr) \
-   ? _CEPH_ASSERT_VOID_CAST (0) \
-   : __ceph_assert_fail(assert_data_ctx)); } while(false)
+  ((expr)								\
+   ? _CEPH_ASSERT_VOID_CAST (0)					\
+   : __ceph_assert_fail (__STRING(expr), __FILE__, __LINE__, __CEPH_ASSERT_FUNCTION))
 
 // this variant will *never* get compiled out to NDEBUG in the future.
 // (ceph_assert currently doesn't either, but in the future it might.)
 #define ceph_assert_always(expr)							\
-  do { static const ceph::assert_data assert_data_ctx = \
-   {__STRING(expr), __FILE__, __LINE__, __CEPH_ASSERT_FUNCTION}; \
-   ((expr) \
-   ? _CEPH_ASSERT_VOID_CAST (0) \
-   : __ceph_assert_fail(assert_data_ctx)); } while(false)
+  ((expr)								\
+   ? _CEPH_ASSERT_VOID_CAST (0)					\
+   : __ceph_assert_fail (__STRING(expr), __FILE__, __LINE__, __CEPH_ASSERT_FUNCTION))
 
 // Named by analogy with printf.  Along with an expression, takes a format
 // string and parameters which are printed if the assertion fails.

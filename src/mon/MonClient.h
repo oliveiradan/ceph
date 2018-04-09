@@ -27,7 +27,6 @@
 
 
 class MMonMap;
-class MConfig;
 class MMonGetVersionReply;
 struct MMonSubscribeAck;
 class MMonCommandAck;
@@ -178,7 +177,6 @@ private:
   bool ms_handle_refused(Connection *con) override { return false; }
 
   void handle_monmap(MMonMap *m);
-  void handle_config(MConfig *m);
 
   void handle_auth(MAuthReply *m);
 
@@ -190,7 +188,6 @@ private:
   bool want_monmap;
   Cond map_cond;
   bool passthrough_monmap = false;
-  bool got_config = false;
 
   // authenticate
   std::unique_ptr<AuthClientHandler> auth;
@@ -345,7 +342,7 @@ public:
 
   int build_initial_monmap();
   int get_monmap();
-  int get_monmap_and_config();
+  int get_monmap_privately();
   /**
    * If you want to see MonMap messages, set this and
    * the MonClient will tell the Messenger it hasn't

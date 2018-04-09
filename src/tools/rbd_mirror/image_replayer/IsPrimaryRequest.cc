@@ -2,7 +2,6 @@
 // vim: ts=8 sw=2 smarttab
 
 #include "IsPrimaryRequest.h"
-#include "common/debug.h"
 #include "common/errno.h"
 #include "common/WorkQueue.h"
 #include "cls/rbd/cls_rbd_client.h"

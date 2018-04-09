@@ -116,31 +116,6 @@ class TestFormatDevice(object):
         assert expected == fake_run.calls[0]['args'][0]
 
 
-mkfs_filestore_flags = [
-    'ceph-osd',
-    '--cluster',
-    '--osd-objectstore', 'filestore',
-    '--mkfs',
-    '-i',
-    '--monmap',
-    '--keyfile', '-', # goes through stdin
-    '--osd-data',
-    '--osd-journal',
-    '--osd-uuid',
-    '--setuser', 'ceph',
-    '--setgroup', 'ceph'
-]
-
-
-class TestOsdMkfsFilestore(object):
-
-    @pytest.mark.parametrize('flag', mkfs_filestore_flags)
-    def test_keyring_is_used(self, fake_call, monkeypatch, flag):
-        monkeypatch.setattr(system, 'chown', lambda path: True)
-        prepare.osd_mkfs_filestore(1, 'asdf', keyring='secret')
-        assert flag in fake_call.calls[0]['args'][0]
-
-
 class TestOsdMkfsBluestore(object):
 
     def test_keyring_is_added(self, fake_call, monkeypatch):
@@ -175,7 +150,7 @@ class TestMountOSD(object):
         prepare.mount_osd('/dev/sda1', 1)
         expected = [
             'mount', '-t', 'xfs', '-o',
-            'rw,noatime,inode64', # default flags
+            'rw', 'noatime', 'inode64', # default flags
             '/dev/sda1', '/var/lib/ceph/osd/ceph-1']
         assert expected == fake_run.calls[0]['args'][0]
 
@@ -192,7 +167,7 @@ class TestMountOSD(object):
             '/dev/sda1', '/var/lib/ceph/osd/ceph-1']
         assert expected == fake_run.calls[0]['args'][0]
 
-    def test_multiple_whitespace_options_are_used(self, conf_ceph_stub, fake_run):
+    def test_multiple_options_are_used(self, conf_ceph_stub, fake_run):
         conf_ceph_stub(dedent("""[global]
         fsid = 1234lkjh1234
         [osd]
@@ -201,20 +176,7 @@ class TestMountOSD(object):
         prepare.mount_osd('/dev/sda1', 1)
         expected = [
             'mount', '-t', 'xfs', '-o',
-            'rw,auto,exec',
-            '/dev/sda1', '/var/lib/ceph/osd/ceph-1']
-        assert expected == fake_run.calls[0]['args'][0]
-
-    def test_multiple_comma_whitespace_options_are_used(self, conf_ceph_stub, fake_run):
-        conf_ceph_stub(dedent("""[global]
-        fsid = 1234lkjh1234
-        [osd]
-        osd mount options xfs = rw, auto, exec"""))
-        conf.cluster = 'ceph'
-        prepare.mount_osd('/dev/sda1', 1)
-        expected = [
-            'mount', '-t', 'xfs', '-o',
-            'rw,auto,exec',
+            'rw', 'auto', 'exec',
             '/dev/sda1', '/var/lib/ceph/osd/ceph-1']
         assert expected == fake_run.calls[0]['args'][0]
 
@@ -230,40 +192,3 @@ class TestMountOSD(object):
             'rw',
             '/dev/sda1', '/var/lib/ceph/osd/ceph-1']
         assert expected == fake_run.calls[0]['args'][0]
-
-
-ceph_conf_mount_values = [
-    ['rw,', 'auto,' 'exec'],
-    ['rw', 'auto', 'exec'],
-    [' rw ', ' auto ', ' exec '],
-    ['rw,', 'auto,', 'exec,'],
-    [',rw ', ',auto ', ',exec,'],
-    [',rw,', ',auto,', ',exec,'],
-]
-
-string_mount_values = [
-    'rw, auto exec ',
-    'rw  auto exec',
-    ',rw, auto, exec,',
-    ' rw  auto exec ',
-    ' rw,auto,exec ',
-    'rw,auto,exec',
-    ',rw,auto,exec,',
-    'rw,auto,exec ',
-    'rw, auto, exec ',
-]
-
-
-class TestNormalizeFlags(object):
-    # a bit overkill since most of this is already tested in prepare.mount_osd
-    # tests
-
-    @pytest.mark.parametrize("flags", ceph_conf_mount_values)
-    def test_normalize_lists(self, flags):
-        result = prepare._normalize_mount_flags(flags)
-        assert result == 'rw,auto,exec'
-
-    @pytest.mark.parametrize("flags", string_mount_values)
-    def test_normalize_strings(self, flags):
-        result = prepare._normalize_mount_flags(flags)
-        assert result == 'rw,auto,exec'

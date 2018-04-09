@@ -40,7 +40,7 @@ namespace dpdk {
   std::condition_variable eal::cond;
   std::list<std::function<void()>> eal::funcs;
 
-  static int bitcount(unsigned long long n)
+  static int bitcount(unsigned n)
   {
     return std::bitset<CHAR_BIT * sizeof(n)>{n}.count();
   }
@@ -52,8 +52,8 @@ namespace dpdk {
     }
 
     bool done = false;
-    auto num = std::stoull(c->_conf->get_val<std::string>("ms_dpdk_coremask"),
-                           nullptr, 16);
+    const char *hexstring = c->_conf->get_val<std::string>("ms_dpdk_coremask").c_str();
+    int num = (int)strtol(hexstring, NULL, 0);
     unsigned int coremaskbit = bitcount(num);
 
     ceph_assert(coremaskbit > c->_conf->ms_async_op_threads);

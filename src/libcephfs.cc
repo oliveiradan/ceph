@@ -77,13 +77,6 @@ public:
 
     int ret;
 
-    {
-      MonClient mc_bootstrap(cct);
-      ret = mc_bootstrap.get_monmap_and_config();
-      if (ret < 0)
-	return ret;
-    }
-
     //monmap
     monclient = new MonClient(cct);
     ret = -CEPHFS_ERROR_MON_MAP_BUILD; //defined in libcephfs.h;
@@ -209,7 +202,11 @@ public:
   int conf_parse_env(const char *name)
   {
     md_config_t *conf = cct->_conf;
-    conf->parse_env(name);
+    vector<const char*> args;
+    env_to_vec(args, name);
+    int ret = conf->parse_argv(args);
+    if (ret)
+      return ret;
     conf->apply_changes(nullptr);
     return 0;
   }
@@ -463,15 +460,6 @@ extern "C" int ceph_is_mounted(struct ceph_mount_info *cmount)
 extern "C" struct UserPerm *ceph_mount_perms(struct ceph_mount_info *cmount)
 {
   return &cmount->default_perms;
-}
-
-extern "C" int ceph_mount_perms_set(struct ceph_mount_info *cmount,
-				    struct UserPerm *perms)
-{
-  if (cmount->is_mounted())
-    return -EISCONN;
-  cmount->default_perms = *perms;
-  return 0;
 }
 
 extern "C" int ceph_statfs(struct ceph_mount_info *cmount, const char *path,
@@ -1518,12 +1506,6 @@ extern "C" int ceph_ll_fsync(class ceph_mount_info *cmount,
 			     Fh *fh, int syncdataonly)
 {
   return (cmount->get_client()->ll_fsync(fh, syncdataonly));
-}
-
-extern "C" int ceph_ll_sync_inode(class ceph_mount_info *cmount,
-			     Inode *in, int syncdataonly)
-{
-  return (cmount->get_client()->ll_sync_inode(in, syncdataonly));
 }
 
 extern "C" off_t ceph_ll_lseek(class ceph_mount_info *cmount,

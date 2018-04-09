@@ -2,7 +2,6 @@
 // vim: ts=8 sw=2 smarttab
 
 #include "SyncPointPruneRequest.h"
-#include "common/debug.h"
 #include "common/errno.h"
 #include "journal/Journaler.h"
 #include "librbd/ImageCtx.h"

@@ -61,6 +61,7 @@ struct AioCompletion {
 
   AsyncOperation async_op;
 
+  uint64_t journal_tid;
   xlist<AioCompletion*>::item m_xlist_item;
   bool event_notify;
 
@@ -89,16 +90,10 @@ struct AioCompletion {
   }
 
   template <typename T, void (T::*MF)(int) = &T::complete>
-  static AioCompletion *create(T *obj, ImageCtx *image_ctx, aio_type_t type) {
-    AioCompletion *comp = create<T, MF>(obj);
-    comp->init_time(image_ctx, type);
-    return comp;
-  }
-
-  template <typename T, void (T::*MF)(int) = &T::complete>
   static AioCompletion *create_and_start(T *obj, ImageCtx *image_ctx,
                                          aio_type_t type) {
-    AioCompletion *comp = create<T, MF>(obj, image_ctx, type);
+    AioCompletion *comp = create<T, MF>(obj);
+    comp->init_time(image_ctx, type);
     comp->start_op();
     return comp;
   }
@@ -108,8 +103,8 @@ struct AioCompletion {
                     complete_arg(NULL), rbd_comp(NULL),
                     pending_count(0), blockers(1),
                     ref(1), released(false), ictx(NULL),
-                    aio_type(AIO_TYPE_NONE), m_xlist_item(this),
-                    event_notify(false) {
+                    aio_type(AIO_TYPE_NONE),
+                    journal_tid(0), m_xlist_item(this), event_notify(false) {
   }
 
   ~AioCompletion() {
@@ -147,6 +142,8 @@ struct AioCompletion {
     get();
   }
   void complete_request(ssize_t r);
+
+  void associate_journal_event(uint64_t tid);
 
   bool is_complete();
 

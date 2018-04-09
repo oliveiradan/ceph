@@ -59,9 +59,6 @@
 
 #define MSG_PAXOS                  40
 
-#define MSG_CONFIG           62
-#define MSG_GET_CONFIG       63
-
 
 // osd internal
 #define MSG_OSD_PING         70
@@ -150,7 +147,7 @@
 #define MSG_MDS_FINDINOREPLY       0x20e
 #define MSG_MDS_OPENINO            0x20f
 #define MSG_MDS_OPENINOREPLY       0x210
-#define MSG_MDS_SNAPUPDATE         0x211
+
 #define MSG_MDS_LOCK               0x300
 #define MSG_MDS_INODEFILECAPS      0x301
 
@@ -175,7 +172,7 @@
 
 // *** generic ***
 #define MSG_TIMECHECK             0x600
-#define MSG_MON_HEALTH            0x601
+//#define MSG_MON_HEALTH            0x601  // remove post-luminous
 
 // *** Message::encode() crcflags bits ***
 #define MSG_CRC_DATA           (1 << 0)

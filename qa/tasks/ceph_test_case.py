@@ -132,8 +132,7 @@ class CephTestCase(unittest.TestCase):
 
         log.debug("wait_until_equal: success")
 
-    @classmethod
-    def wait_until_true(cls, condition, timeout):
+    def wait_until_true(self, condition, timeout):
         period = 5
         elapsed = 0
         while True:

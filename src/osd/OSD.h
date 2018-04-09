@@ -1008,12 +1008,12 @@ private:
   s_names injectfull_state = NONE;
   float get_failsafe_full_ratio();
   void check_full_status(float ratio);
-  bool _check_full(DoutPrefixProvider *dpp, s_names type) const;
+  bool _check_full(s_names type, ostream &ss) const;
 public:
-  bool check_failsafe_full(DoutPrefixProvider *dpp) const;
-  bool check_full(DoutPrefixProvider *dpp) const;
-  bool check_backfill_full(DoutPrefixProvider *dpp) const;
-  bool check_nearfull(DoutPrefixProvider *dpp) const;
+  bool check_failsafe_full(ostream &ss) const;
+  bool check_full(ostream &ss) const;
+  bool check_backfill_full(ostream &ss) const;
+  bool check_nearfull(ostream &ss) const;
   bool is_failsafe_full() const;
   bool is_full() const;
   bool is_backfillfull() const;
@@ -1931,7 +1931,6 @@ protected:
   void _preboot(epoch_t oldest, epoch_t newest);
   void _send_boot();
   void _collect_metadata(map<string,string> *pmeta);
-  std::string _collect_compression_algorithms();
 
   void start_waiting_for_healthy();
   bool _is_healthy();
@@ -2096,7 +2095,7 @@ protected:
 
   // -- status reporting --
   MPGStats *collect_pg_stats();
-  std::vector<DaemonHealthMetric> get_health_metrics();
+  std::vector<OSDHealthMetric> get_health_metrics();
 
 private:
   bool ms_can_fast_dispatch_any() const override { return true; }
@@ -2225,9 +2224,6 @@ private:
   int get_num_op_threads();
 
   float get_osd_recovery_sleep();
-
-  void probe_smart(ostream& ss);
-  int probe_smart_device(const char *device, int timeout, std::string *result);
 
 public:
   static int peek_meta(ObjectStore *store, string& magic,

@@ -1095,8 +1095,6 @@ int CephFuse::Handle::init(int argc, const char *argv[])
     "fuse_atomic_o_trunc");
   auto fuse_debug = client->cct->_conf->get_val<bool>(
     "fuse_debug");
-  auto fuse_max_write = client->cct->_conf->get_val<uint64_t>(
-    "fuse_max_write");
 
   if (fuse_allow_other) {
     newargv[newargc++] = "-o";
@@ -1110,13 +1108,6 @@ int CephFuse::Handle::init(int argc, const char *argv[])
   if (fuse_big_writes) {
     newargv[newargc++] = "-o";
     newargv[newargc++] = "big_writes";
-  }
-  if (fuse_max_write > 0) {
-    char strsplice[65];
-    newargv[newargc++] = "-o";
-    newargv[newargc++] = strsplice;
-    sprintf(strsplice, "max_write=%" PRIu64, fuse_max_write);
-    newargv[newargc++] = strsplice;
   }
   if (fuse_atomic_o_trunc) {
     newargv[newargc++] = "-o";

@@ -250,14 +250,8 @@ void DPDKStack::spawn_worker(unsigned i, std::function<void ()> &&func)
   // if dpdk::eal::init already called by NVMEDevice, we will select 1..n
   // cores
   assert(rte_lcore_count() >= i + 1);
-  unsigned core_id;
-  RTE_LCORE_FOREACH_SLAVE(core_id) {
-    if (i-- == 0) {
-      break;
-    }
-  }
   dpdk::eal::execute_on_master([&]() {
-    r = rte_eal_remote_launch(dpdk_thread_adaptor, static_cast<void*>(&funcs[i]), core_id);
+    r = rte_eal_remote_launch(dpdk_thread_adaptor, static_cast<void*>(&funcs[i]), i+1);
     if (r < 0) {
       lderr(cct) << __func__ << " remote launch failed, r=" << r << dendl;
       ceph_abort();

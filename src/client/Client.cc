@@ -910,7 +910,6 @@ Inode * Client::add_update_inode(InodeStat *st, utime_t from,
 
   // setting I_COMPLETE needs to happen after adding the cap
   if (updating_inode &&
-      in->snapid == CEPH_NOSNAP &&
       in->is_dir() &&
       (st->cap.caps & CEPH_CAP_FILE_SHARED) &&
       (issued & CEPH_CAP_FILE_EXCL) == 0 &&
@@ -3836,16 +3835,6 @@ void Client::add_update_cap(Inode *in, MetaSession *mds_session, uint64_t cap_id
     in->snaprealm = get_snap_realm(realm);
     in->snaprealm->inodes_with_caps.push_back(&in->snaprealm_item);
     ldout(cct, 15) << __func__ << " first one, opened snaprealm " << in->snaprealm << dendl;
-  } else {
-    assert(in->snaprealm);
-    if ((flags & CEPH_CAP_FLAG_AUTH) &&
-	realm != inodeno_t(-1) && in->snaprealm->ino != realm) {
-      in->snaprealm_item.remove_myself();
-      auto oldrealm = in->snaprealm;
-      in->snaprealm = get_snap_realm(realm);
-      in->snaprealm->inodes_with_caps.push_back(&in->snaprealm_item);
-      put_snap_realm(oldrealm);
-    }
   }
 
   mds_rank_t mds = mds_session->mds_num;
@@ -4033,14 +4022,12 @@ void Client::_invalidate_kernel_dcache()
 {
   if (unmounting)
     return;
-  if (can_invalidate_dentries) {
-    if (dentry_invalidate_cb && root->dir) {
-      for (ceph::unordered_map<string, Dentry*>::iterator p = root->dir->dentries.begin();
-         p != root->dir->dentries.end();
-         ++p) {
-       if (p->second->inode)
-        _schedule_invalidate_dentry_callback(p->second, false);
-      }
+  if (can_invalidate_dentries && dentry_invalidate_cb && root->dir) {
+    for (ceph::unordered_map<string, Dentry*>::iterator p = root->dir->dentries.begin();
+	 p != root->dir->dentries.end();
+	 ++p) {
+      if (p->second->inode)
+	_schedule_invalidate_dentry_callback(p->second, false);
     }
   } else if (remount_cb) {
     // Hacky:
@@ -6096,6 +6083,11 @@ int Client::_lookup(Inode *dir, const string& dname, int mask, InodeRef *target,
   int r = 0;
   Dentry *dn = NULL;
 
+  if (!dir->is_dir()) {
+    r = -ENOTDIR;
+    goto done;
+  }
+
   if (dname == "..") {
     if (dir->dentries.empty()) {
       MetaRequest *req = new MetaRequest(CEPH_MDS_OP_LOOKUPPARENT);
@@ -6124,11 +6116,6 @@ int Client::_lookup(Inode *dir, const string& dname, int mask, InodeRef *target,
     goto done;
   }
 
-  if (!dir->is_dir()) {
-    r = -ENOTDIR;
-    goto done;
-  }
-
   if (dname.length() > NAME_MAX) {
     r = -ENAMETOOLONG;
     goto done;
@@ -6148,7 +6135,7 @@ int Client::_lookup(Inode *dir, const string& dname, int mask, InodeRef *target,
 	     << " seq " << dn->lease_seq
 	     << dendl;
 
-    if (!dn->inode || dn->inode->caps_issued_mask(mask, true)) {
+    if (!dn->inode || dn->inode->caps_issued_mask(mask)) {
       // is dn lease valid?
       utime_t now = ceph_clock_now();
       if (dn->lease_mds >= 0 &&
@@ -6166,9 +6153,9 @@ int Client::_lookup(Inode *dir, const string& dname, int mask, InodeRef *target,
 		       << " vs lease_gen " << dn->lease_gen << dendl;
       }
       // dir lease?
-      if (dir->caps_issued_mask(CEPH_CAP_FILE_SHARED, true)) {
+      if (dir->caps_issued_mask(CEPH_CAP_FILE_SHARED)) {
 	if (dn->cap_shared_gen == dir->shared_gen &&
-	    (!dn->inode || dn->inode->caps_issued_mask(mask, true)))
+	    (!dn->inode || dn->inode->caps_issued_mask(mask)))
 	      goto hit_dn;
 	if (!dn->inode && (dir->flags & I_COMPLETE)) {
 	  ldout(cct, 10) << __func__ << " concluded ENOENT locally for "
@@ -6181,7 +6168,7 @@ int Client::_lookup(Inode *dir, const string& dname, int mask, InodeRef *target,
     }
   } else {
     // can we conclude ENOENT locally?
-    if (dir->caps_issued_mask(CEPH_CAP_FILE_SHARED, true) &&
+    if (dir->caps_issued_mask(CEPH_CAP_FILE_SHARED) &&
 	(dir->flags & I_COMPLETE)) {
       ldout(cct, 10) << __func__ << " concluded ENOENT locally for " << *dir << " dn '" << dname << "'" << dendl;
       return -ENOENT;
@@ -6645,7 +6632,7 @@ int Client::_readlink(Inode *in, char *buf, size_t size)
 
 int Client::_getattr(Inode *in, int mask, const UserPerm& perms, bool force)
 {
-  bool yes = in->caps_issued_mask(mask, true);
+  bool yes = in->caps_issued_mask(mask);
 
   ldout(cct, 10) << __func__ << " mask " << ccap_string(mask) << " issued=" << yes << dendl;
   if (yes && !force)
@@ -7856,7 +7843,7 @@ int Client::readdir_r_cb(dir_result_t *d, add_dirent_cb_t cb, void *p,
 	   << dendl;
   if (dirp->inode->snapid != CEPH_SNAPDIR &&
       dirp->inode->is_complete_and_ordered() &&
-      dirp->inode->caps_issued_mask(CEPH_CAP_FILE_SHARED, true)) {
+      dirp->inode->caps_issued_mask(CEPH_CAP_FILE_SHARED)) {
     int err = _readdir_cache_cb(dirp, cb, p, caps, getref);
     if (err != -EAGAIN)
       return err;
@@ -8755,10 +8742,6 @@ int Client::preadv(int fd, const struct iovec *iov, int iovcnt, loff_t offset)
 
 int64_t Client::_read(Fh *f, int64_t offset, uint64_t size, bufferlist *bl)
 {
-  int have = 0;
-  bool movepos = false;
-  std::unique_ptr<C_SaferCond> onuninline;
-  int64_t r = 0;
   const md_config_t *conf = cct->_conf;
   Inode *in = f->inode.get();
 
@@ -8766,6 +8749,7 @@ int64_t Client::_read(Fh *f, int64_t offset, uint64_t size, bufferlist *bl)
     return -EBADF;
   //bool lazy = f->mode == CEPH_FILE_MODE_LAZY;
 
+  bool movepos = false;
   if (offset < 0) {
     lock_fh_pos(f);
     offset = f->pos;
@@ -8774,21 +8758,27 @@ int64_t Client::_read(Fh *f, int64_t offset, uint64_t size, bufferlist *bl)
   loff_t start_pos = offset;
 
   if (in->inline_version == 0) {
-    r = _getattr(in, CEPH_STAT_CAP_INLINE_DATA, f->actor_perms, true);
+    int r = _getattr(in, CEPH_STAT_CAP_INLINE_DATA, f->actor_perms, true);
     if (r < 0) {
-      goto done;
+      if (movepos)
+        unlock_fh_pos(f);
+      return r;
     }
     assert(in->inline_version > 0);
   }
 
 retry:
-  have = 0;
-  r = get_caps(in, CEPH_CAP_FILE_RD, CEPH_CAP_FILE_CACHE, &have, -1);
+  int have;
+  int r = get_caps(in, CEPH_CAP_FILE_RD, CEPH_CAP_FILE_CACHE, &have, -1);
   if (r < 0) {
-    goto done;
+    if (movepos)
+        unlock_fh_pos(f);
+    return r;
   }
   if (f->flags & O_DIRECT)
     have &= ~CEPH_CAP_FILE_CACHE;
+
+  std::unique_ptr<C_SaferCond> onuninline = nullptr;
 
   if (in->inline_version < CEPH_INLINE_NONE) {
     if (!(have & CEPH_CAP_FILE_CACHE)) {
@@ -8796,6 +8786,7 @@ retry:
       uninline_data(in, onuninline.get());
     } else {
       uint32_t len = in->inline_data.length();
+
       uint64_t endoff = offset + size;
       if (endoff > in->size)
         endoff = in->size;
@@ -8807,13 +8798,10 @@ retry:
           bl->substr_of(in->inline_data, offset, len - offset);
           bl->append_zero(endoff - len);
         }
-        r = endoff - offset;
       } else if ((uint64_t)offset < endoff) {
         bl->append_zero(endoff - offset);
-        r = endoff - offset;
-      } else {
-        r = 0;
       }
+
       goto success;
     }
   }
@@ -8853,16 +8841,16 @@ retry:
   }
 
 success:
-  assert(r >= 0);
   if (movepos) {
     // adjust fd pos
-    f->pos = start_pos + r;
+    f->pos = start_pos + bl->length();
+    unlock_fh_pos(f);
   }
 
 done:
   // done!
 
-  if (onuninline) {
+  if (nullptr != onuninline) {
     client_lock.Unlock();
     int ret = onuninline->wait();
     client_lock.Lock();
@@ -8874,13 +8862,15 @@ done:
     } else
       r = ret;
   }
-  if (have) {
+
+  if (have)
     put_cap_ref(in, CEPH_CAP_FILE_RD);
-  }
-  if (movepos) {
-    unlock_fh_pos(f);
-  }
-  return r;
+  if (r < 0) {
+    if (movepos)
+        unlock_fh_pos(f);
+    return r;
+  } else
+    return bl->length();
 }
 
 Client::C_Readahead::C_Readahead(Client *c, Fh *f) :
@@ -9534,7 +9524,7 @@ int Client::fstatx(int fd, struct ceph_statx *stx, const UserPerm& perms,
   unsigned mask = statx_to_mask(flags, want);
 
   int r = 0;
-  if (mask && !f->inode->caps_issued_mask(mask, true)) {
+  if (mask && !f->inode->caps_issued_mask(mask)) {
     r = _getattr(f->inode, mask, perms);
     if (r < 0) {
       ldout(cct, 3) << "fstatx exit on error!" << dendl;
@@ -10293,11 +10283,9 @@ int Client::ll_lookup(Inode *parent, const char *name, struct stat *attr,
   auto fuse_default_permissions = cct->_conf->get_val<bool>(
     "fuse_default_permissions");
   if (!fuse_default_permissions) {
-    if (strcmp(name, ".") && strcmp(name, "..")) {
-      r = may_lookup(parent, perms);
-      if (r < 0)
-	return r;
-    }
+    r = may_lookup(parent, perms);
+    if (r < 0)
+      return r;
   }
 
   string dname(name);
@@ -10622,7 +10610,7 @@ int Client::ll_getattrx(Inode *in, struct ceph_statx *stx, unsigned int want,
   int res = 0;
   unsigned mask = statx_to_mask(flags, want);
 
-  if (mask && !in->caps_issued_mask(mask, true))
+  if (mask && !in->caps_issued_mask(mask))
     res = _ll_getattr(in, mask, perms);
 
   if (res == 0)
@@ -12965,19 +12953,6 @@ int Client::ll_fsync(Fh *fh, bool syncdataonly)
     fh->take_async_err();
   }
   return r;
-}
-
-int Client::ll_sync_inode(Inode *in, bool syncdataonly)
-{
-  Mutex::Locker lock(client_lock);
-  ldout(cct, 3) << "ll_sync_inode " << *in << " " << dendl;
-  tout(cct) << "ll_sync_inode" << std::endl;
-  tout(cct) << (unsigned long)in << std::endl;
-
-  if (unmounting)
-    return -ENOTCONN;
-
-  return _fsync(in, syncdataonly);
 }
 
 #ifdef FALLOC_FL_PUNCH_HOLE

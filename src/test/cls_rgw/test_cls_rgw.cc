@@ -673,7 +673,7 @@ TEST(cls_rgw, gc_defer)
   ASSERT_EQ(0, truncated);
 
   librados::ObjectWriteOperation op3;
-  vector<string> tags;
+  list<string> tags;
   tags.push_back(tag);
 
   /* remove chain */

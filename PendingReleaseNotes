@@ -1,24 +1,7 @@
 13.0.1
 ------
 
-* *RGW, MON*:
-    Commands variously marked as "del", "delete", "remove" etc. should now all be
-    normalized as "rm". Commands already supporting alternatives to "rm" remain
-    backward-compatible.
-
 * *CephFS*:
-
-  * Upgrading an MDS cluster to 12.2.3+ will result in all active MDS
-    exiting due to feature incompatibilities once an upgraded MDS comes online
-    (even as standby). Operators may ignore the error messages and continue
-    upgrading/restarting or follow this upgrade sequence:
-
-    Reduce the number of ranks to 1 (`ceph fs set <fs_name> max_mds 1`),
-    deactivate all other ranks (`ceph mds deactivate <fs_name>:<n>`), shutdown
-    standbys leaving the one active MDS, upgrade the single active MDS, then
-    upgrade/start standbys. Finally, restore the previous max_mds.
-
-    See also: https://tracker.ceph.com/issues/23172
 
   * Several "ceph mds" commands have been obsoleted and replaced
     by equivalent "ceph fs" commands:
@@ -74,33 +57,12 @@
 * The -f option of the rados tool now means "--format" instead of "--force",
   for consistency with the ceph tool.
 
-
->= 13.0.2
+>= 12.2.2
 ---------
 
-The ceph-rest-api command-line tool (obsoleted by the MGR "restful" module and
-deprecated since v12.2.5) has been dropped.
+- *CephFS*:
 
-There is a MGR module called "restful" which provides similar functionality
-via a "pass through" method. See http://docs.ceph.com/docs/master/mgr/restful
-for details.
-
-
->= 12.2.5
----------
-
-The ceph-rest-api command-line tool included in the ceph-mon package has been
-obsoleted by the MGR "restful" module. The ceph-rest-api tool is hereby
-declared deprecated and will be dropped in Mimic.
-
-The MGR "restful" module provides similar functionality via a "pass through"
-method. See http://docs.ceph.com/docs/luminous/mgr/restful for details.
-
-
-13.0.2
-------
-
-* The format of the 'config diff' output via the admin socket has changed.  It
-  now reflects the source of each config option (e.g., default, config file,
-  command line) as well as the final (active) value.
-
+  * The CephFS client now catches failures to clear dentries during startup
+    and refuses to start as consistency and untrimmable cache issues may
+    develop. The new option client_die_on_failed_dentry_invalidate (default:
+    true) may be turned off to allow the client to proceed (dangerous!).

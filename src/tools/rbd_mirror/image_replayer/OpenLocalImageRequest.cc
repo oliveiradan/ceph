@@ -5,7 +5,6 @@
 #include "CloseImageRequest.h"
 #include "IsPrimaryRequest.h"
 #include "OpenLocalImageRequest.h"
-#include "common/debug.h"
 #include "common/errno.h"
 #include "common/WorkQueue.h"
 #include "librbd/ExclusiveLock.h"

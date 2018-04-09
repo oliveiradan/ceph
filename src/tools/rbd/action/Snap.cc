@@ -22,6 +22,17 @@ static const std::string ALL_NAME("all");
 namespace at = argument_types;
 namespace po = boost::program_options;
 
+static bool is_not_user_snap_namespace(librbd::Image* image,
+				       const librbd::snap_info_t &snap_info)
+{
+  librbd::snap_namespace_type_t namespace_type;
+  int r = image->snap_get_namespace_type(snap_info.id, &namespace_type);
+  if (r < 0) {
+    return false;
+  }
+  return namespace_type != RBD_SNAP_NAMESPACE_TYPE_USER;
+}
+
 int do_list_snaps(librbd::Image& image, Formatter *f, bool all_snaps, librados::Rados& rados)
 {
   std::vector<librbd::snap_info_t> snaps;
@@ -36,9 +47,9 @@ int do_list_snaps(librbd::Image& image, Formatter *f, bool all_snaps, librados::
 
   if (!all_snaps) {
     snaps.erase(remove_if(snaps.begin(),
-                          snaps.end(),
-                          boost::bind(utils::is_not_user_snap_namespace, &image, _1)),
-                snaps.end());
+			  snaps.end(),
+			  boost::bind(is_not_user_snap_namespace, &image, _1)),
+		snaps.end());
   }
 
   if (f) {
@@ -194,26 +205,17 @@ int do_purge_snaps(librbd::Image& image, bool no_progress)
   } else if (0 == snaps.size()) {
     return 0;
   } else {
-    list<std::string> protect;
-    for (auto it = snaps.begin(); it != snaps.end();) {
-      r = image.snap_is_protected(it->name.c_str(), &is_protected);
+    for (size_t i = 0; i < snaps.size(); ++i) {
+      r = image.snap_is_protected(snaps[i].name.c_str(), &is_protected);
       if (r < 0) {
         pc.fail();
         return r;
       } else if (is_protected == true) {
-        protect.push_back(it->name.c_str());
-        snaps.erase(it);
-      } else {
-        ++it;
+        pc.fail();
+        std::cerr << "\r" << "rbd: snapshot '" << snaps[i].name.c_str()
+                  << "' is protected from removal." << std::endl;
+        return -EBUSY;
       }
-    }
-
-    if (!protect.empty()) {
-      std::cout << "rbd: error removing snapshot(s) '" << protect << "', which "
-                << (1 == protect.size() ? "is" : "are")
-                << " protected - these must be unprotected with "
-                << "`rbd snap unprotect`."
-                << std::endl;
     }
     for (size_t i = 0; i < snaps.size(); ++i) {
       r = image.snap_remove(snaps[i].name.c_str());
@@ -221,15 +223,10 @@ int do_purge_snaps(librbd::Image& image, bool no_progress)
         pc.fail();
         return r;
       }
-      pc.update_progress(i + 1, snaps.size() + protect.size());
+      pc.update_progress(i + 1, snaps.size());
     }
 
-    if (!protect.empty()) {
-      pc.fail();
-    } else if (snaps.size() > 0) {
-      pc.finish();
-    }
-
+    pc.finish();
     return 0;
   }
 }
@@ -846,7 +843,7 @@ Shell::Action action_remove(
   {"snap", "remove"}, {"snap", "rm"}, "Delete a snapshot.", "",
   &get_remove_arguments, &execute_remove);
 Shell::Action action_purge(
-  {"snap", "purge"}, {}, "Delete all unprotected snapshots.", "",
+  {"snap", "purge"}, {}, "Delete all snapshots.", "",
   &get_purge_arguments, &execute_purge);
 Shell::Action action_rollback(
   {"snap", "rollback"}, {"snap", "revert"}, "Rollback image to snapshot.", "",

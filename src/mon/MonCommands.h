@@ -171,11 +171,10 @@ COMMAND("auth caps " \
 	"name=caps,type=CephString,n=N", \
 	"update caps for <name> from caps specified in the command", \
 	"auth", "rwx", "cli,rest")
-COMMAND_WITH_FLAG("auth del " \
+COMMAND("auth del " \
 	"name=entity,type=CephString", \
 	"delete all caps for <name>", \
-	"auth", "rwx", "cli,rest", \
-    FLAG(DEPRECATED))
+	"auth", "rwx", "cli,rest")
 COMMAND("auth rm " \
 	"name=entity,type=CephString", \
 	"remove all caps for <name>", \
@@ -203,7 +202,10 @@ COMMAND_WITH_FLAG("injectargs " \
 	     "name=injected_args,type=CephString,n=N",			\
 	     "inject config arguments into monitor", "mon", "rw", "cli,rest",
 	     FLAG(NOFORWARD))
-
+COMMAND("config set " \
+	"name=key,type=CephString name=value,type=CephString",
+	"Set a configuration option at runtime (not persistent)",
+	"mon", "rw", "cli,rest")
 COMMAND("status", "show cluster status", "mon", "r", "cli,rest")
 COMMAND("health name=detail,type=CephChoices,strings=detail,req=false", \
 	"show cluster health", "mon", "r", "cli,rest")
@@ -240,7 +242,7 @@ COMMAND_WITH_FLAG("version", "show mon daemon version", "mon", "r", "cli,rest",
                   FLAG(NOFORWARD))
 
 COMMAND("node ls " \
-	"name=type,type=CephChoices,strings=all|osd|mon|mds|mgr,req=false",
+	"name=type,type=CephChoices,strings=all|osd|mon|mds,req=false",
 	"list all nodes in cluster [type]", "mon", "r", "cli,rest")
 /*
  * Monitor-specific commands under module 'mon'
@@ -346,10 +348,10 @@ COMMAND("mds compat rm_incompat " \
 COMMAND_WITH_FLAG("mds add_data_pool " \
 	"name=pool,type=CephString", \
 	"add data pool <pool>", "mds", "rw", "cli,rest", FLAG(OBSOLETE))
-COMMAND_WITH_FLAG("mds rm_data_pool " \
+COMMAND_WITH_FLAG("mds remove_data_pool " \
 	"name=pool,type=CephString", \
 	"remove data pool <pool>", "mds", "rw", "cli,rest", FLAG(OBSOLETE))
-COMMAND_WITH_FLAG("mds remove_data_pool " \
+COMMAND_WITH_FLAG("mds rm_data_pool " \
 	"name=pool,type=CephString", \
 	"remove data pool <pool>", "mds", "rw", "cli,rest", FLAG(OBSOLETE))
 COMMAND_WITH_FLAG("mds newfs " \
@@ -424,13 +426,12 @@ COMMAND("mon add " \
 	"name=name,type=CephString " \
 	"name=addr,type=CephIPAddr", \
 	"add new monitor named <name> at <addr>", "mon", "rw", "cli,rest")
+COMMAND("mon remove " \
+	"name=name,type=CephString", \
+	"remove monitor named <name>", "mon", "rw", "cli,rest")
 COMMAND("mon rm " \
 	"name=name,type=CephString", \
 	"remove monitor named <name>", "mon", "rw", "cli,rest")
-COMMAND_WITH_FLAG("mon remove " \
-	"name=name,type=CephString", \
-	"remove monitor named <name>", "mon", "rw", "cli,rest", \
-    FLAG(DEPRECATED))
 COMMAND("mon feature ls " \
         "name=with_value,type=CephChoices,strings=--with-value,req=false", \
         "list available mon map features to be set/unset", \
@@ -584,12 +585,11 @@ COMMAND("osd crush rm " \
 	"name=ancestor,type=CephString,req=false,goodchars=[A-Za-z0-9-_.]", \
 	"remove <name> from crush map (everywhere, or just at <ancestor>)",\
 	"osd", "rw", "cli,rest")
-COMMAND_WITH_FLAG("osd crush remove " \
+COMMAND("osd crush remove " \
 	"name=name,type=CephString,goodchars=[A-Za-z0-9-_.] " \
 	"name=ancestor,type=CephString,req=false,goodchars=[A-Za-z0-9-_.]", \
 	"remove <name> from crush map (everywhere, or just at <ancestor>)", \
-	"osd", "rw", "cli,rest", \
-    FLAG(DEPRECATED))
+	"osd", "rw", "cli,rest")
 COMMAND("osd crush unlink " \
 	"name=name,type=CephString,goodchars=[A-Za-z0-9-_.] " \
 	"name=ancestor,type=CephString,req=false,goodchars=[A-Za-z0-9-_.]", \
@@ -709,9 +709,6 @@ COMMAND("osd set-nearfull-ratio " \
 	"name=ratio,type=CephFloat,range=0.0|1.0", \
 	"set usage ratio at which OSDs are marked near-full",
 	"osd", "rw", "cli,rest")
-COMMAND("osd get-require-min-compat-client",
-        "get the minimum client version we will maintain compatibility with",
-        "osd", "r", "cli,rest")
 COMMAND("osd set-require-min-compat-client " \
 	"name=version,type=CephString " \
 	"name=sure,type=CephChoices,strings=--yes-i-really-mean-it,req=false", \
@@ -917,13 +914,12 @@ COMMAND("osd pool create " \
 	"name=rule,type=CephString,req=false " \
         "name=expected_num_objects,type=CephInt,req=false", \
 	"create pool", "osd", "rw", "cli,rest")
-COMMAND_WITH_FLAG("osd pool delete " \
+COMMAND("osd pool delete " \
 	"name=pool,type=CephPoolname " \
 	"name=pool2,type=CephPoolname,req=false " \
 	"name=sure,type=CephString,req=false", \
 	"delete pool", \
-	"osd", "rw", "cli,rest", \
-    FLAG(DEPRECATED))
+	"osd", "rw", "cli,rest")
 COMMAND("osd pool rm " \
 	"name=pool,type=CephPoolname " \
 	"name=pool2,type=CephPoolname,req=false " \
@@ -998,17 +994,16 @@ COMMAND("osd tier add " \
 	"name=force_nonempty,type=CephChoices,strings=--force-nonempty,req=false",
 	"add the tier <tierpool> (the second one) to base pool <pool> (the first one)", \
 	"osd", "rw", "cli,rest")
+COMMAND("osd tier remove " \
+	"name=pool,type=CephPoolname " \
+	"name=tierpool,type=CephPoolname",
+	"remove the tier <tierpool> (the second one) from base pool <pool> (the first one)", \
+	"osd", "rw", "cli,rest")
 COMMAND("osd tier rm " \
 	"name=pool,type=CephPoolname " \
 	"name=tierpool,type=CephPoolname",
 	"remove the tier <tierpool> (the second one) from base pool <pool> (the first one)", \
 	"osd", "rw", "cli,rest")
-COMMAND_WITH_FLAG("osd tier remove " \
-	"name=pool,type=CephPoolname " \
-	"name=tierpool,type=CephPoolname",
-	"remove the tier <tierpool> (the second one) from base pool <pool> (the first one)", \
-	"osd", "rw", "cli,rest", \
-    FLAG(DEPRECATED))
 COMMAND("osd tier cache-mode " \
 	"name=pool,type=CephPoolname " \
 	"name=mode,type=CephChoices,strings=none|writeback|forward|readonly|readforward|proxy|readproxy " \
@@ -1018,13 +1013,12 @@ COMMAND("osd tier set-overlay " \
 	"name=pool,type=CephPoolname " \
 	"name=overlaypool,type=CephPoolname", \
 	"set the overlay pool for base pool <pool> to be <overlaypool>", "osd", "rw", "cli,rest")
+COMMAND("osd tier remove-overlay " \
+	"name=pool,type=CephPoolname ", \
+	"remove the overlay pool for base pool <pool>", "osd", "rw", "cli,rest")
 COMMAND("osd tier rm-overlay " \
 	"name=pool,type=CephPoolname ", \
 	"remove the overlay pool for base pool <pool>", "osd", "rw", "cli,rest")
-COMMAND_WITH_FLAG("osd tier remove-overlay " \
-	"name=pool,type=CephPoolname ", \
-	"remove the overlay pool for base pool <pool>", "osd", "rw", "cli,rest", \
-    FLAG(DEPRECATED))
 
 COMMAND("osd tier add-cache " \
 	"name=pool,type=CephPoolname " \
@@ -1049,10 +1043,9 @@ COMMAND_WITH_FLAG("config-key put " \
 		  "name=val,type=CephString,req=false",			\
 		  "put <key>, value <val>", "config-key", "rw", "cli,rest",
 		  FLAG(DEPRECATED))
-COMMAND_WITH_FLAG("config-key del " \
+COMMAND("config-key del " \
 	"name=key,type=CephString", \
-	"delete <key>", "config-key", "rw", "cli,rest", \
-    FLAG(DEPRECATED))
+	"delete <key>", "config-key", "rw", "cli,rest")
 COMMAND("config-key rm " \
 	"name=key,type=CephString", \
 	"rm <key>", "config-key", "rw", "cli,rest")
@@ -1062,8 +1055,7 @@ COMMAND("config-key exists " \
 COMMAND_WITH_FLAG("config-key list ", "list keys", "config-key", "r", "cli,rest",
 		  FLAG(DEPRECATED))
 COMMAND("config-key ls ", "list keys", "config-key", "r", "cli,rest")
-COMMAND("config-key dump " \
-	"name=key,type=CephString,req=false", "dump keys and values (with optional prefix)", "config-key", "r", "cli,rest")
+COMMAND("config-key dump", "dump keys and values", "config-key", "r", "cli,rest")
 
 
 /*
@@ -1096,31 +1088,3 @@ COMMAND("mgr count-metadata name=property,type=CephString",
 COMMAND("mgr versions", \
 	"check running versions of ceph-mgr daemons",
 	"mgr", "r", "cli,rest")
-
-// ConfigMonitor
-COMMAND("config set" \
-	" name=who,type=CephString" \
-	" name=name,type=CephString" \
-	" name=value,type=CephString", \
-	"Set a configuration option for one or more entities",
-	"config", "rw", "cli,rest")
-COMMAND("config rm"						\
-	" name=who,type=CephString" \
-	" name=name,type=CephString",
-	"Clear a configuration option for one or more entities",
-	"config", "rw", "cli,rest")
-COMMAND("config get " \
-	"name=who,type=CephString " \
-	"name=key,type=CephString,req=False",
-	"Show configuration option(s) for an entity",
-	"config", "r", "cli,rest")
-COMMAND("config dump",
-	"Show all configuration option(s)",
-	"mon", "r", "cli,rest")
-COMMAND("config help " \
-	"name=key,type=CephString",
-	"Describe a configuration option",
-	"config", "r", "cli,rest")
-COMMAND("config assimilate-conf",
-	"Assimilate options from a conf, and return a new, minimal conf file",
-	"config", "rw", "cli,rest")

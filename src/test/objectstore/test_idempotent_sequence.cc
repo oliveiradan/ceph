@@ -210,11 +210,12 @@ int run_command(std::string& command, std::vector<std::string>& args)
 
 int main(int argc, const char *argv[])
 {
+  vector<const char*> def_args;
   vector<const char*> args;
   our_name = argv[0];
   argv_to_vec(argc, argv, args);
 
-  auto cct = global_init(NULL, args,
+  auto cct = global_init(&def_args, args,
 			 CEPH_ENTITY_TYPE_CLIENT, CODE_ENVIRONMENT_UTILITY,
 			 CINIT_FLAG_NO_DEFAULT_CONFIG_FILE);
   common_init_finish(g_ceph_context);

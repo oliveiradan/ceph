@@ -82,7 +82,8 @@ TEST_F(ErasureCodePluginRegistryTest, factory_mutex) {
 TEST_F(ErasureCodePluginRegistryTest, all)
 {
   ErasureCodeProfile profile;
-  string directory = g_conf->get_val<std::string>("erasure_code_dir");
+  const char* env = getenv("CEPH_LIB");
+  string directory(env ? env : ".libs");
   ErasureCodeInterfaceRef erasure_code;
   ErasureCodePluginRegistry &instance = ErasureCodePluginRegistry::instance();
   EXPECT_FALSE(erasure_code);

@@ -38,6 +38,7 @@
 
 #include "capture.h"
 #include "IP.h"
+#include "shared_ptr.h"
 #include "toeplitz.h"
 
 #include "common/dout.h"

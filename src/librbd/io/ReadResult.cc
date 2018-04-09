@@ -79,10 +79,13 @@ struct ReadResult::AssembleResultVisitor : public boost::static_visitor<void> {
   }
 };
 
-ReadResult::C_ImageReadRequest::C_ImageReadRequest(
-    AioCompletion *aio_completion, const Extents image_extents)
-  : aio_completion(aio_completion), image_extents(image_extents) {
+ReadResult::C_ReadRequest::C_ReadRequest(AioCompletion *aio_completion)
+  : aio_completion(aio_completion) {
   aio_completion->add_request();
+}
+
+void ReadResult::C_ReadRequest::finish(int r) {
+  aio_completion->complete_request(r);
 }
 
 void ReadResult::C_ImageReadRequest::finish(int r) {
@@ -103,21 +106,15 @@ void ReadResult::C_ImageReadRequest::finish(int r) {
     r = length;
   }
 
-  aio_completion->complete_request(r);
+  C_ReadRequest::finish(r);
 }
 
-ReadResult::C_ObjectReadRequest::C_ObjectReadRequest(
-    AioCompletion *aio_completion, uint64_t object_off, uint64_t object_len,
-    Extents&& buffer_extents, bool ignore_enoent)
-  : aio_completion(aio_completion), object_off(object_off),
-    object_len(object_len), buffer_extents(std::move(buffer_extents)),
-    ignore_enoent(ignore_enoent) {
-  aio_completion->add_request();
-}
-
-void ReadResult::C_ObjectReadRequest::finish(int r) {
+void ReadResult::C_SparseReadRequestBase::finish(ExtentMap &extent_map,
+                                                 const Extents &buffer_extents,
+                                                 uint64_t offset, size_t length,
+                                                 bufferlist &bl, int r) {
   CephContext *cct = aio_completion->ictx->cct;
-  ldout(cct, 10) << "C_ObjectReadRequest: r=" << r
+  ldout(cct, 10) << "C_SparseReadRequestBase: r = " << r
                  << dendl;
 
   if (ignore_enoent && r == -ENOENT) {
@@ -129,18 +126,18 @@ void ReadResult::C_ObjectReadRequest::finish(int r) {
                    << " bl " << bl.length() << dendl;
     // handle the case where a sparse-read wasn't issued
     if (extent_map.empty()) {
-      extent_map[object_off] = bl.length();
+      extent_map[offset] = bl.length();
     }
 
     aio_completion->lock.Lock();
     aio_completion->read_result.m_destriper.add_partial_sparse_result(
-      cct, bl, extent_map, object_off, buffer_extents);
+      cct, bl, extent_map, offset, buffer_extents);
     aio_completion->lock.Unlock();
 
-    r = object_len;
+    r = length;
   }
 
-  aio_completion->complete_request(r);
+  C_ReadRequest::finish(r);
 }
 
 ReadResult::ReadResult() : m_buffer(Empty()) {

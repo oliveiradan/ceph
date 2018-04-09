@@ -34,7 +34,7 @@ struct ECSubWrite {
   set<hobject_t> temp_added;
   set<hobject_t> temp_removed;
   boost::optional<pg_hit_set_history_t> updated_hit_set_history;
-  bool backfill_or_async_recovery = false;
+  bool backfill = false;
   ECSubWrite() : tid(0) {}
   ECSubWrite(
     pg_shard_t from,
@@ -50,7 +50,7 @@ struct ECSubWrite {
     boost::optional<pg_hit_set_history_t> updated_hit_set_history,
     const set<hobject_t> &temp_added,
     const set<hobject_t> &temp_removed,
-    bool backfill_or_async_recovery)
+    bool backfill)
     : from(from), tid(tid), reqid(reqid),
       soid(soid), stats(stats), t(t),
       at_version(at_version),
@@ -59,7 +59,7 @@ struct ECSubWrite {
       temp_added(temp_added),
       temp_removed(temp_removed),
       updated_hit_set_history(updated_hit_set_history),
-      backfill_or_async_recovery(backfill_or_async_recovery)
+      backfill(backfill)
     {}
   void claim(ECSubWrite &other) {
     from = other.from;
@@ -75,7 +75,7 @@ struct ECSubWrite {
     temp_added.swap(other.temp_added);
     temp_removed.swap(other.temp_removed);
     updated_hit_set_history = other.updated_hit_set_history;
-    backfill_or_async_recovery = other.backfill_or_async_recovery;
+    backfill = other.backfill;
   }
   void encode(bufferlist &bl) const;
   void decode(bufferlist::iterator &bl);

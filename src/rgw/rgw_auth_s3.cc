@@ -17,7 +17,6 @@
 
 #include <boost/container/small_vector.hpp>
 #include <boost/utility/string_view.hpp>
-#include <boost/algorithm/string/trim_all.hpp>
 
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_rgw
@@ -617,8 +616,7 @@ get_v4_canonical_headers(const req_info& info,
   std::string canonical_hdrs;
   for (const auto& header : canonical_hdrs_map) {
     const boost::string_view& name = header.first;
-    std::string value = header.second;
-    boost::trim_all<std::string>(value);
+    const std::string& value = header.second;
 
     canonical_hdrs.append(name.data(), name.length())
                   .append(":", std::strlen(":"))

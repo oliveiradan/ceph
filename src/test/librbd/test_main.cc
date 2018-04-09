@@ -24,8 +24,6 @@ extern void register_test_operations();
 
 int main(int argc, char **argv)
 {
-  setenv("RBD_FORCE_ALLOW_V1","1",1);
-
   register_test_librbd();
 #ifdef TEST_LIBRBD_INTERNALS
   register_test_deep_copy();

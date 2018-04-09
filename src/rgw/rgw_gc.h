@@ -16,8 +16,6 @@
 
 #include <atomic>
 
-class RGWGCIOManager;
-
 class RGWGC {
   CephContext *cct;
   RGWRados *store;
@@ -50,15 +48,14 @@ public:
   void add_chain(librados::ObjectWriteOperation& op, cls_rgw_obj_chain& chain, const string& tag);
   int send_chain(cls_rgw_obj_chain& chain, const string& tag, bool sync);
   int defer_chain(const string& tag, bool sync);
-  int remove(int index, const std::vector<string>& tags, librados::AioCompletion **pc);
+  int remove(int index, const std::list<string>& tags);
 
   void initialize(CephContext *_cct, RGWRados *_store);
   void finalize();
 
   int list(int *index, string& marker, uint32_t max, bool expired_only, std::list<cls_rgw_gc_obj_info>& result, bool *truncated);
   void list_init(int *index) { *index = 0; }
-  int process(int index, int process_max_secs, bool expired_only,
-              RGWGCIOManager& io_manager);
+  int process(int index, int process_max_secs, bool expired_only);
   int process(bool expired_only);
 
   bool going_down();

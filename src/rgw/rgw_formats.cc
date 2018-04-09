@@ -287,10 +287,7 @@ void RGWFormatter_Plain::dump_value_int(const char *name, const char *fmt, ...)
 class HTMLHelper : public XMLFormatter {
 public:
   static std::string escape(const std::string& unescaped_str) {
-    int len = escape_xml_attr_len(unescaped_str.c_str());
-    std::string escaped(len, 0);
-    escape_xml_attr(unescaped_str.c_str(), escaped.data());
-    return escaped;
+    return escape_xml_str(unescaped_str.c_str());
   }
 };
 
@@ -301,7 +298,7 @@ void RGWSwiftWebsiteListingFormatter::generate_header(
   ss << R"(<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 )"
      << R"(Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">)";
 
-  ss << "<html><head><title>Listing of " << xml_stream_escaper(dir_path)
+  ss << "<html><head><title>Listing of " << HTMLHelper::escape(dir_path)
      << "</title>";
 
   if (! css_path.empty()) {
@@ -318,7 +315,7 @@ void RGWSwiftWebsiteListingFormatter::generate_header(
 
   ss << "</head><body>";
 
-  ss << R"(<h1 id="title">Listing of )" << xml_stream_escaper(dir_path) << "</h1>"
+  ss << R"(<h1 id="title">Listing of )" << HTMLHelper::escape(dir_path) << "</h1>"
      << R"(<table id="listing">)"
      << R"(<tr id="heading">)"
      << R"(<th class="colname">Name</th>)"

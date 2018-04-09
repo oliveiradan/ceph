@@ -261,7 +261,7 @@ void Objecter::init()
 		PerfCountersBuilder::PRIO_CRITICAL);
     pcb.add_u64(l_osdc_op_laggy, "op_laggy", "Laggy operations");
     pcb.add_u64_counter(l_osdc_op_send, "op_send", "Sent operations");
-    pcb.add_u64_counter(l_osdc_op_send_bytes, "op_send_bytes", "Sent data", NULL, 0, unit_t(BYTES));
+    pcb.add_u64_counter(l_osdc_op_send_bytes, "op_send_bytes", "Sent data");
     pcb.add_u64_counter(l_osdc_op_resend, "op_resend", "Resent operations");
     pcb.add_u64_counter(l_osdc_op_reply, "op_reply", "Operation reply");
 
@@ -581,10 +581,9 @@ void Objecter::_send_linger(LingerOp *info,
 
   // do not resend this; we will send a new op to reregister
   o->should_resend = false;
-  o->ctx_budgeted = true;
 
   if (info->register_tid) {
-    // repeat send.  cancel old registration op, if any.
+    // repeat send.  cancel old registeration op, if any.
     OSDSession::unique_lock sl(info->session->lock);
     if (info->session->ops.count(info->register_tid)) {
       Op *o = info->session->ops[info->register_tid];
@@ -592,9 +591,12 @@ void Objecter::_send_linger(LingerOp *info,
       _cancel_linger_op(o);
     }
     sl.unlock();
-  }
 
-  _op_submit_with_budget(o, sul, &info->register_tid, &info->ctx_budget);
+    _op_submit(o, sul, &info->register_tid);
+  } else {
+    // first send
+    _op_submit_with_budget(o, sul, &info->register_tid);
+  }
 
   logger->inc(l_osdc_linger_send);
 }
@@ -791,7 +793,7 @@ Objecter::LingerOp *Objecter::linger_register(const object_t& oid,
 					      const object_locator_t& oloc,
 					      int flags)
 {
-  LingerOp *info = new LingerOp(this);
+  LingerOp *info = new LingerOp;
   info->target.base_oid = oid;
   info->target.base_oloc = oloc;
   if (info->target.base_oloc.key == oid)
@@ -833,8 +835,6 @@ ceph_tid_t Objecter::linger_watch(LingerOp *info,
   info->pobjver = objver;
   info->on_reg_commit = oncommit;
 
-  info->ctx_budget = take_linger_budget(info);
-
   shunique_lock sul(rwlock, ceph::acquire_unique);
   _linger_submit(info, sul);
   logger->inc(l_osdc_linger_active);
@@ -857,8 +857,6 @@ ceph_tid_t Objecter::linger_notify(LingerOp *info,
   info->pobjver = objver;
   info->on_reg_commit = onfinish;
 
-  info->ctx_budget = take_linger_budget(info);
-  
   shunique_lock sul(rwlock, ceph::acquire_unique);
   _linger_submit(info, sul);
   logger->inc(l_osdc_linger_active);
@@ -870,7 +868,6 @@ void Objecter::_linger_submit(LingerOp *info, shunique_lock& sul)
 {
   assert(sul.owns_lock() && sul.mutex() == &rwlock);
   assert(info->linger_id);
-  assert(info->ctx_budget != -1); // caller needs to have taken budget already!
 
   // Populate Op::target
   OSDSession *s = NULL;
@@ -2542,16 +2539,6 @@ int Objecter::op_cancel(ceph_tid_t tid, int r)
   return ret;
 }
 
-int Objecter::op_cancel(const vector<ceph_tid_t>& tids, int r)
-{
-  unique_lock wl(rwlock);
-  ldout(cct,10) << __func__ << " " << tids << dendl;
-  for (auto tid : tids) {
-    _op_cancel(tid, r);
-  }
-  return 0;
-}
-
 int Objecter::_op_cancel(ceph_tid_t tid, int r)
 {
   int ret = 0;
@@ -3303,11 +3290,11 @@ void Objecter::_send_op(Op *op)
   op->session->con->send_message(m);
 }
 
-int Objecter::calc_op_budget(const vector<OSDOp>& ops)
+int Objecter::calc_op_budget(Op *op)
 {
   int op_budget = 0;
-  for (vector<OSDOp>::const_iterator i = ops.begin();
-       i != ops.end();
+  for (vector<OSDOp>::iterator i = op->ops.begin();
+       i != op->ops.end();
        ++i) {
     if (i->op.op & CEPH_OSD_OP_MODE_WR) {
       op_budget += i->indata.length();
@@ -3331,7 +3318,7 @@ void Objecter::_throttle_op(Op *op,
   bool locked_for_write = sul.owns_lock();
 
   if (!op_budget)
-    op_budget = calc_op_budget(op->ops);
+    op_budget = calc_op_budget(op);
   if (!op_throttle_bytes.get_or_fail(op_budget)) { //couldn't take right now
     sul.unlock();
     op_throttle_bytes.get(op_budget);
@@ -3350,9 +3337,15 @@ void Objecter::_throttle_op(Op *op,
   }
 }
 
-int Objecter::take_linger_budget(LingerOp *info)
+void Objecter::unregister_op(Op *op)
 {
-  return 1;
+  OSDSession::unique_lock sl(op->session->lock);
+  op->session->ops.erase(op->tid);
+  sl.unlock();
+  put_session(op->session);
+  op->session = NULL;
+
+  inflight_ops--;
 }
 
 /* This function DOES put the passed message before returning */

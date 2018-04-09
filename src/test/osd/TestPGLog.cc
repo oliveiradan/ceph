@@ -1388,6 +1388,27 @@ TEST_F(PGLogTest, merge_log) {
     EXPECT_TRUE(dirty_big_info);
   }
 
+  // If our log is empty, the incoming log needs to have not been trimmed.
+  {
+    clear();
+
+    pg_log_t olog;
+    pg_info_t oinfo;
+    pg_shard_t fromosd;
+    pg_info_t info;
+    list<hobject_t> remove_snap;
+    bool dirty_info = false;
+    bool dirty_big_info = false;
+
+    // olog has been trimmed
+    olog.tail = eversion_t(1, 1);
+
+    TestHandler h(remove_snap);
+    PrCtl unset_dumpable;
+    ASSERT_DEATH(merge_log(oinfo, olog, fromosd, info, &h,
+			   dirty_info, dirty_big_info), "");
+  }
+
 }
 
 TEST_F(PGLogTest, proc_replica_log) {
@@ -2273,7 +2294,7 @@ TEST_F(PGLogTest, split_into_preserves_may_include_deletes) {
   {
     rebuilt_missing_with_deletes = false;
     missing.may_include_deletes = true;
-    PGLog child_log(cct);
+    PGLog child_log(cct, prefix_provider);
     pg_t child_pg;
     split_into(child_pg, 6, &child_log);
     ASSERT_TRUE(child_log.get_missing().may_include_deletes);
@@ -2283,7 +2304,7 @@ TEST_F(PGLogTest, split_into_preserves_may_include_deletes) {
   {
     rebuilt_missing_with_deletes = false;
     missing.may_include_deletes = false;
-    PGLog child_log(cct);
+    PGLog child_log(cct, prefix_provider);
     pg_t child_pg;
     split_into(child_pg, 6, &child_log);
     ASSERT_FALSE(child_log.get_missing().may_include_deletes);

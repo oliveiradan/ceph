@@ -23,10 +23,10 @@
 
 #define SWIFT_GROUP_ALL_USERS ".r:*"
 
-static int parse_list(const char* uid_list,
+static int parse_list(const std::string& uid_list,
                       std::vector<std::string>& uids)           /* out */
 {
-  char *s = strdup(uid_list);
+  char *s = strdup(uid_list.c_str());
   if (!s) {
     return -ENOMEM;
   }
@@ -176,8 +176,8 @@ int RGWAccessControlPolicy_SWIFT::add_grants(RGWRados* const store,
 int RGWAccessControlPolicy_SWIFT::create(RGWRados* const store,
                                          const rgw_user& id,
                                          const std::string& name,
-                                         const char* read_list,
-                                         const char* write_list,
+                                         const std::string& read_list,
+                                         const std::string& write_list,
                                          uint32_t& rw_mask)
 {
   acl.create_default(id, name);
@@ -185,7 +185,7 @@ int RGWAccessControlPolicy_SWIFT::create(RGWRados* const store,
   owner.set_name(name);
   rw_mask = 0;
 
-  if (read_list) {
+  if (read_list.size()) {
     std::vector<std::string> uids;
     int r = parse_list(read_list, uids);
     if (r < 0) {
@@ -202,7 +202,7 @@ int RGWAccessControlPolicy_SWIFT::create(RGWRados* const store,
     }
     rw_mask |= SWIFT_PERM_READ;
   }
-  if (write_list) {
+  if (write_list.size()) {
     std::vector<std::string> uids;
     int r = parse_list(write_list, uids);
     if (r < 0) {

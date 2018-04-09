@@ -17,7 +17,7 @@
 #include "msg/Connection.h"
 #include "msg/Dispatcher.h"
 #include "mon/MgrMap.h"
-#include "mgr/DaemonHealthMetric.h"
+#include "osd/OSDHealthMetric.h"
 
 #include "common/perf_counters.h"
 #include "common/Timer.h"
@@ -66,8 +66,6 @@ protected:
 
   utime_t last_connect_attempt;
 
-  uint64_t last_config_bl_version = 0;
-
   Context *report_callback = nullptr;
   Context *connect_retry_callback = nullptr;
 
@@ -81,7 +79,7 @@ protected:
   std::string service_name, daemon_name;
   std::map<std::string,std::string> daemon_metadata;
   std::map<std::string,std::string> daemon_status;
-  std::vector<DaemonHealthMetric> daemon_health_metrics;
+  std::vector<OSDHealthMetric> osd_health_metrics;
 
   void reconnect();
   void _send_open();
@@ -120,12 +118,11 @@ public:
     const std::map<std::string,std::string>& metadata);
   int service_daemon_update_status(
     std::map<std::string,std::string>&& status);
-  void update_daemon_health(std::vector<DaemonHealthMetric>&& metrics);
+  void update_osd_health(std::vector<OSDHealthMetric>&& metrics);
 
 private:
-  void _send_stats();
-  void _send_pgstats();
-  void _send_report();
+  void send_stats();
+  void send_report();
 };
 
 #endif

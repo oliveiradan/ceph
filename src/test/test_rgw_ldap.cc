@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
     }
   }
 
-  /* don't accidentally run as anonymous */
+  /* dont accidentally run as anonymous */
   if (access_key == "") {
     std::cout << argv[0] << " no AWS credentials, exiting" << std::endl;
     return EPERM;

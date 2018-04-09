@@ -75,16 +75,6 @@ using namespace librados;
 
 #include "compressor/Compressor.h"
 
-#ifdef WITH_LTTNG
-#define TRACEPOINT_DEFINE
-#define TRACEPOINT_PROBE_DYNAMIC_LINKAGE
-#include "tracing/rgw_rados.h"
-#undef TRACEPOINT_PROBE_DYNAMIC_LINKAGE
-#undef TRACEPOINT_DEFINE
-#else
-#define tracepoint(...)
-#endif
-
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_rgw
 
@@ -4910,12 +4900,6 @@ void RGWRados::build_bucket_index_marker(const string& shard_id_str, const strin
 
 int RGWRados::open_bucket_index_ctx(const RGWBucketInfo& bucket_info, librados::IoCtx& index_ctx)
 {
-  const rgw_pool& explicit_pool = bucket_info.bucket.explicit_placement.index_pool;
-
-  if (!explicit_pool.empty()) {
-    return open_pool_ctx(explicit_pool, index_ctx);
-  }
-
   const string *rule = &bucket_info.placement_rule;
   if (rule->empty()) {
     rule = &zonegroup.default_placement;
@@ -5585,7 +5569,7 @@ int rgw_policy_from_attrset(CephContext *cct, map<string, bufferlist>& attrset, 
     ldout(cct, 0) << "ERROR: could not decode policy, caught buffer::error" << dendl;
     return -EIO;
   }
-  if (cct->_conf->subsys.should_gather<ceph_subsys_rgw, 15>()) {
+  if (cct->_conf->subsys.should_gather(ceph_subsys_rgw, 15)) {
     RGWAccessControlPolicy_S3 *s3policy = static_cast<RGWAccessControlPolicy_S3 *>(policy);
     ldout(cct, 15) << __func__ << " Read AccessControlPolicy";
     s3policy->to_xml(*_dout);
@@ -6914,16 +6898,6 @@ int RGWRados::Object::Write::_do_write_meta(uint64_t size, uint64_t accounted_si
   RGWRados *store = target->get_store();
 
   ObjectWriteOperation op;
-#ifdef WITH_LTTNG
-  const struct req_state* s =  get_req_state();
-  string req_id;
-  if (!s) {
-    // fake req_id
-    req_id = store->unique_id(store->get_new_req_id());
-  } else {
-    req_id = s->req_id;
-  }
-#endif
 
   RGWObjState *state;
   int r = target->get_state(&state, false, assume_noent);
@@ -7046,16 +7020,12 @@ int RGWRados::Object::Write::_do_write_meta(uint64_t size, uint64_t accounted_si
   }
 
   if (!index_op->is_prepared()) {
-    tracepoint(rgw_rados, prepare_enter, req_id.c_str());
     r = index_op->prepare(CLS_RGW_OP_ADD, &state->write_tag);
-    tracepoint(rgw_rados, prepare_exit, req_id.c_str());
     if (r < 0)
       return r;
   }
 
-  tracepoint(rgw_rados, operate_enter, req_id.c_str());
   r = ref.ioctx.operate(ref.oid, &op);
-  tracepoint(rgw_rados, operate_exit, req_id.c_str());
   if (r < 0) { /* we can expect to get -ECANCELED if object was replaced under,
                 or -ENOENT if was removed, or -EEXIST if it did not exist
                 before and now it does */
@@ -7074,11 +7044,9 @@ int RGWRados::Object::Write::_do_write_meta(uint64_t size, uint64_t accounted_si
     ldout(store->ctx(), 0) << "ERROR: complete_atomic_modification returned r=" << r << dendl;
   }
 
-  tracepoint(rgw_rados, complete_enter, req_id.c_str());
   r = index_op->complete(poolid, epoch, size, accounted_size,
                         meta.set_mtime, etag, content_type, &acl_bl,
                         meta.category, meta.remove_objs, meta.user_data);
-  tracepoint(rgw_rados, complete_exit, req_id.c_str());
   if (r < 0)
     goto done_cancel;
 
@@ -8122,15 +8090,6 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
   ret = read_op.prepare();
   if (ret < 0) {
     return ret;
-  }
-  if (src_attrs.count(RGW_ATTR_CRYPT_MODE)) {
-    // Current implementation does not follow S3 spec and even
-    // may result in data corruption silently when copying
-    // multipart objects acorss pools. So reject COPY operations
-    //on encrypted objects before it is fully functional.
-    ldout(cct, 0) << "ERROR: copy op for encrypted object " << src_obj
-                  << " has not been implemented." << dendl;
-    return -ERR_NOT_IMPLEMENTED;
   }
 
   src_attrs[RGW_ATTR_ACL] = attrs[RGW_ATTR_ACL];
@@ -9350,8 +9309,7 @@ int RGWRados::get_obj_state_impl(RGWObjectCtx *rctx, const RGWBucketInfo& bucket
       return -EIO;
     }
     ldout(cct, 10) << "manifest: total_size = " << s->manifest.get_obj_size() << dendl;
-    if (cct->_conf->subsys.should_gather<ceph_subsys_rgw, 20>() && \
-	s->manifest.has_explicit_objs()) {
+    if (cct->_conf->subsys.should_gather(ceph_subsys_rgw, 20) && s->manifest.has_explicit_objs()) {
       RGWObjManifest::obj_iterator mi;
       for (mi = s->manifest.obj_begin(); mi != s->manifest.obj_end(); ++mi) {
         ldout(cct, 20) << "manifest: ofs=" << mi.get_ofs() << " loc=" << mi.get_location().get_raw_obj(this) << dendl;
@@ -9912,7 +9870,7 @@ int RGWRados::Object::Read::prepare()
   }
   if (params.attrs) {
     *params.attrs = astate->attrset;
-    if (cct->_conf->subsys.should_gather<ceph_subsys_rgw, 20>()) {
+    if (cct->_conf->subsys.should_gather(ceph_subsys_rgw, 20)) {
       for (iter = params.attrs->begin(); iter != params.attrs->end(); ++iter) {
         ldout(cct, 20) << "Read xattr: " << iter->first << dendl;
       }
@@ -10016,7 +9974,7 @@ int RGWRados::stat_system_obj(RGWObjectCtx& obj_ctx,
 
   if (attrs) {
     *attrs = astate->attrset;
-    if (cct->_conf->subsys.should_gather<ceph_subsys_rgw, 20>()) {
+    if (cct->_conf->subsys.should_gather(ceph_subsys_rgw, 20)) {
       map<string, bufferlist>::iterator iter;
       for (iter = attrs->begin(); iter != attrs->end(); ++iter) {
         ldout(cct, 20) << "Read xattr: " << iter->first << dendl;
@@ -10705,7 +10663,9 @@ int RGWRados::get_obj_iterate_cb(RGWObjectCtx *ctx, RGWObjState *astate,
         obj_ofs < astate->data.length()) {
       unsigned chunk_len = std::min((uint64_t)astate->data.length() - obj_ofs, (uint64_t)len);
 
+      d->data_lock.Lock();
       r = d->client_cb->handle_data(astate->data, obj_ofs, chunk_len);
+      d->data_lock.Unlock();
       if (r < 0)
         return r;
 
@@ -12793,15 +12753,11 @@ int RGWRados::gc_operate(string& oid, librados::ObjectWriteOperation *op)
   return gc_pool_ctx.operate(oid, op);
 }
 
-int RGWRados::gc_aio_operate(string& oid, librados::ObjectWriteOperation *op, AioCompletion **pc)
+int RGWRados::gc_aio_operate(string& oid, librados::ObjectWriteOperation *op)
 {
   AioCompletion *c = librados::Rados::aio_create_completion(NULL, NULL, NULL);
   int r = gc_pool_ctx.aio_operate(oid, c, op);
-  if (!pc) {
-    c->release();
-  } else {
-    *pc = c;
-  }
+  c->release();
   return r;
 }
 

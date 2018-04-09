@@ -16,9 +16,8 @@ int main(int argc, char **argv)
   std::vector<const char*> args;
   argv_to_vec(argc, (const char **)argv, args);
 
-  auto cct = global_init(NULL, args, CEPH_ENTITY_TYPE_OSD,
-			 CODE_ENVIRONMENT_UTILITY,
-			 CINIT_FLAG_NO_MON_CONFIG);
+  auto cct = global_init(NULL, args, CEPH_ENTITY_TYPE_CLIENT,
+			 CODE_ENVIRONMENT_UTILITY, 0);
   g_conf->set_val("lockdep", "true");
   common_init_finish(g_ceph_context);
 

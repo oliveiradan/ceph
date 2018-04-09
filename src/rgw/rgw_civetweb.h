@@ -19,7 +19,6 @@ class RGWCivetWeb : public rgw::io::RestfulClient,
 
   bool explicit_keepalive;
   bool explicit_conn_close;
-  bool got_eof_on_read;
 
   rgw::io::StaticOutputBufferer<> txbuf;
 
@@ -28,7 +27,7 @@ class RGWCivetWeb : public rgw::io::RestfulClient,
   size_t dump_date_header();
 
 public:
-  [[nodiscard]] int init_env(CephContext *cct) override;
+  void init_env(CephContext *cct) override;
 
   size_t send_status(int status, const char *status_name) override;
   size_t send_100_continue() override;

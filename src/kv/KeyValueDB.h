@@ -151,7 +151,6 @@ public:
   /// create a new instance
   static KeyValueDB *create(CephContext *cct, const std::string& type,
 			    const std::string& dir,
-			    map<std::string,std::string> options = {},
 			    void *p = NULL);
 
   /// test whether we can successfully initialize; may have side effects (e.g., create)

@@ -41,11 +41,9 @@ void RGWSyncTraceNode::log(int level, const string& s)
   history.push_back(status);
   /* dump output on either rgw_sync, or rgw -- but only once */
   if (cct->_conf->subsys.should_gather(ceph_subsys_rgw_sync, level)) {
-    lsubdout(cct, rgw_sync,
-      ceph::dout::need_dynamic(level)) << "RGW-SYNC:" << to_str() << dendl;
+    lsubdout(cct, rgw_sync, level) << "RGW-SYNC:" << to_str() << dendl;
   } else {
-    lsubdout(cct, rgw,
-      ceph::dout::need_dynamic(level)) << "RGW-SYNC:" << to_str() << dendl;
+    lsubdout(cct, rgw, level) << "RGW-SYNC:" << to_str() << dendl;
   }
 }
 

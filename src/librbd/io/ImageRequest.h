@@ -21,7 +21,7 @@ class ImageCtx;
 namespace io {
 
 class AioCompletion;
-class ObjectDispatchSpec;
+class ObjectRequestHandle;
 class ReadResult;
 
 template <typename ImageCtxT = ImageCtx>
@@ -33,28 +33,63 @@ public:
     m_trace.event("finish");
   }
 
+  static ImageRequest* create_read_request(ImageCtxT &image_ctx,
+                                           AioCompletion *aio_comp,
+                                           Extents &&image_extents,
+                                           ReadResult &&read_result,
+                                           int op_flags,
+                                           const ZTracer::Trace &parent_trace);
+  static ImageRequest* create_write_request(ImageCtxT &image_ctx,
+                                            AioCompletion *aio_comp,
+                                            Extents &&image_extents,
+                                            bufferlist &&bl, int op_flags,
+                                            const ZTracer::Trace &parent_trace);
+  static ImageRequest* create_discard_request(ImageCtxT &image_ctx,
+                                              AioCompletion *aio_comp,
+                                              uint64_t off, uint64_t len,
+                                              bool skip_partial_discard,
+                                              const ZTracer::Trace &parent_trace);
+  static ImageRequest* create_flush_request(ImageCtxT &image_ctx,
+                                            AioCompletion *aio_comp,
+                                            const ZTracer::Trace &parent_trace);
+  static ImageRequest* create_writesame_request(ImageCtxT &image_ctx,
+                                                AioCompletion *aio_comp,
+                                                uint64_t off, uint64_t len,
+                                                bufferlist &&bl, int op_flags,
+                                                const ZTracer::Trace &parent_trace);
+  static ImageRequest* create_compare_and_write_request(
+      ImageCtxT &image_ctx, AioCompletion *c, Extents &&image_extents,
+      bufferlist &&cmp_bl, bufferlist &&bl, uint64_t *mismatch_offset,
+      int op_flags, const ZTracer::Trace &parent_trace);
+
   static void aio_read(ImageCtxT *ictx, AioCompletion *c,
                        Extents &&image_extents, ReadResult &&read_result,
                        int op_flags, const ZTracer::Trace &parent_trace);
   static void aio_write(ImageCtxT *ictx, AioCompletion *c,
                         Extents &&image_extents, bufferlist &&bl, int op_flags,
 			const ZTracer::Trace &parent_trace);
-  static void aio_discard(ImageCtxT *ictx, AioCompletion *c,
-                          Extents &&image_extents, bool skip_partial_discard,
+  static void aio_discard(ImageCtxT *ictx, AioCompletion *c, uint64_t off,
+                          uint64_t len, bool skip_partial_discard,
 			  const ZTracer::Trace &parent_trace);
   static void aio_flush(ImageCtxT *ictx, AioCompletion *c,
-                        FlushSource flush_source,
-                        const ZTracer::Trace &parent_trace);
-  static void aio_writesame(ImageCtxT *ictx, AioCompletion *c,
-                            Extents &&image_extents, bufferlist &&bl,
-                            int op_flags, const ZTracer::Trace &parent_trace);
+			const ZTracer::Trace &parent_trace);
+  static void aio_writesame(ImageCtxT *ictx, AioCompletion *c, uint64_t off,
+                            uint64_t len, bufferlist &&bl, int op_flags,
+			    const ZTracer::Trace &parent_trace);
 
   static void aio_compare_and_write(ImageCtxT *ictx, AioCompletion *c,
                                     Extents &&image_extents, bufferlist &&cmp_bl,
                                     bufferlist &&bl, uint64_t *mismatch_offset,
                                     int op_flags, const ZTracer::Trace &parent_trace);
 
+  virtual bool is_write_op() const {
+    return false;
+  }
+
+  void start_op();
+
   void send();
+  void fail(int r);
 
   void set_bypass_image_cache() {
     m_bypass_image_cache = true;
@@ -64,14 +99,23 @@ public:
     return m_trace;
   }
 
+  bool was_throttled() {
+    return m_throttled;
+  }
+
+  void set_throttled() {
+    m_throttled = true;
+  }
+
 protected:
-  typedef std::list<ObjectDispatchSpec*> ObjectRequests;
+  typedef std::list<ObjectRequestHandle *> ObjectRequests;
 
   ImageCtxT &m_image_ctx;
   AioCompletion *m_aio_comp;
   Extents m_image_extents;
   ZTracer::Trace m_trace;
   bool m_bypass_image_cache = false;
+  bool m_throttled = false;
 
   ImageRequest(ImageCtxT &image_ctx, AioCompletion *aio_comp,
                Extents &&image_extents, const char *trace_name,
@@ -81,7 +125,7 @@ protected:
       m_trace(util::create_trace(image_ctx, trace_name, parent_trace)) {
     m_trace.event("start");
   }
-
+  
 
   virtual int clip_request();
   virtual void send_request() = 0;
@@ -119,6 +163,10 @@ private:
 template <typename ImageCtxT = ImageCtx>
 class AbstractImageWriteRequest : public ImageRequest<ImageCtxT> {
 public:
+  bool is_write_op() const override {
+    return true;
+  }
+
   inline void flag_synchronous() {
     m_synchronous = true;
   }
@@ -139,18 +187,24 @@ protected:
 
   void send_request() override;
 
-  virtual int validate_object_extents(
-      const ObjectExtents &object_extents) const {
+  virtual int prune_object_extents(ObjectExtents &object_extents) {
     return 0;
   }
+  virtual uint32_t get_object_cache_request_count(bool journaling) const {
+    return 0;
+  }
+  virtual void send_object_cache_requests(const ObjectExtents &object_extents,
+                                          uint64_t journal_tid) = 0;
 
-  void send_object_requests(const ObjectExtents &object_extents,
-                            const ::SnapContext &snapc, uint64_t journal_tid);
-  virtual ObjectDispatchSpec *create_object_request(
+  virtual void send_object_requests(const ObjectExtents &object_extents,
+                                    const ::SnapContext &snapc,
+                                    ObjectRequests *object_requests);
+  virtual ObjectRequestHandle *create_object_request(
       const ObjectExtent &object_extent, const ::SnapContext &snapc,
-      uint64_t journal_tid, Context *on_finish) = 0;
+      Context *on_finish) = 0;
 
-  virtual uint64_t append_journal_event(bool synchronous) = 0;
+  virtual uint64_t append_journal_event(const ObjectRequests &requests,
+                                        bool synchronous) = 0;
   virtual void update_stats(size_t length) = 0;
 
 private:
@@ -185,12 +239,19 @@ protected:
 
   void send_image_cache_request() override;
 
+  void send_object_cache_requests(const ObjectExtents &object_extents,
+                                  uint64_t journal_tid) override;
 
-  ObjectDispatchSpec *create_object_request(
+  void send_object_requests(const ObjectExtents &object_extents,
+                            const ::SnapContext &snapc,
+                            ObjectRequests *aio_object_requests) override;
+
+  ObjectRequestHandle *create_object_request(
       const ObjectExtent &object_extent, const ::SnapContext &snapc,
-      uint64_t journal_tid, Context *on_finish) override;
+      Context *on_finish) override;
 
-  uint64_t append_journal_event(bool synchronous) override;
+  uint64_t append_journal_event(const ObjectRequests &requests,
+                                bool synchronous) override;
   void update_stats(size_t length) override;
 
 private:
@@ -202,10 +263,10 @@ template <typename ImageCtxT = ImageCtx>
 class ImageDiscardRequest : public AbstractImageWriteRequest<ImageCtxT> {
 public:
   ImageDiscardRequest(ImageCtxT &image_ctx, AioCompletion *aio_comp,
-                      Extents&& image_extents, bool skip_partial_discard,
+                      uint64_t off, uint64_t len, bool skip_partial_discard,
 		      const ZTracer::Trace &parent_trace)
     : AbstractImageWriteRequest<ImageCtxT>(
-	image_ctx, aio_comp, std::move(image_extents), "discard", parent_trace),
+	image_ctx, aio_comp, {{off, len}}, "discard", parent_trace),
       m_skip_partial_discard(skip_partial_discard) {
   }
 
@@ -220,13 +281,20 @@ protected:
     return "aio_discard";
   }
 
+  int prune_object_extents(ObjectExtents &object_extents) override;
+
   void send_image_cache_request() override;
 
-  ObjectDispatchSpec *create_object_request(
-      const ObjectExtent &object_extent, const ::SnapContext &snapc,
-      uint64_t journal_tid, Context *on_finish) override;
+  uint32_t get_object_cache_request_count(bool journaling) const override;
+  void send_object_cache_requests(const ObjectExtents &object_extents,
+                                  uint64_t journal_tid) override;
 
-  uint64_t append_journal_event(bool synchronous) override;
+  ObjectRequestHandle *create_object_request(
+      const ObjectExtent &object_extent, const ::SnapContext &snapc,
+      Context *on_finish) override;
+
+  uint64_t append_journal_event(const ObjectRequests &requests,
+                                bool synchronous) override;
   void update_stats(size_t length) override;
 private:
   bool m_skip_partial_discard;
@@ -236,10 +304,12 @@ template <typename ImageCtxT = ImageCtx>
 class ImageFlushRequest : public ImageRequest<ImageCtxT> {
 public:
   ImageFlushRequest(ImageCtxT &image_ctx, AioCompletion *aio_comp,
-                    FlushSource flush_source,
-                    const ZTracer::Trace &parent_trace)
-    : ImageRequest<ImageCtxT>(image_ctx, aio_comp, {}, "flush", parent_trace),
-      m_flush_source(flush_source) {
+		    const ZTracer::Trace &parent_trace)
+    : ImageRequest<ImageCtxT>(image_ctx, aio_comp, {}, "flush", parent_trace) {
+  }
+
+  bool is_write_op() const override {
+    return true;
   }
 
 protected:
@@ -257,21 +327,16 @@ protected:
   const char *get_request_type() const override {
     return "aio_flush";
   }
-
-private:
-  FlushSource m_flush_source;
-
 };
 
 template <typename ImageCtxT = ImageCtx>
 class ImageWriteSameRequest : public AbstractImageWriteRequest<ImageCtxT> {
 public:
   ImageWriteSameRequest(ImageCtxT &image_ctx, AioCompletion *aio_comp,
-                        Extents&& image_extents, bufferlist &&bl,
+                        uint64_t off, uint64_t len, bufferlist &&bl,
                         int op_flags, const ZTracer::Trace &parent_trace)
     : AbstractImageWriteRequest<ImageCtxT>(
-	image_ctx, aio_comp, std::move(image_extents), "writesame",
-        parent_trace),
+	image_ctx, aio_comp, {{off, len}}, "writesame", parent_trace),
       m_data_bl(std::move(bl)), m_op_flags(op_flags) {
   }
 
@@ -286,13 +351,23 @@ protected:
     return "aio_writesame";
   }
 
+  bool assemble_writesame_extent(const ObjectExtent &object_extent,
+                                 bufferlist *bl, bool force_write);
+
   void send_image_cache_request() override;
 
-  ObjectDispatchSpec *create_object_request(
-      const ObjectExtent &object_extent, const ::SnapContext &snapc,
-      uint64_t journal_tid, Context *on_finish) override;
+  void send_object_cache_requests(const ObjectExtents &object_extents,
+                                  uint64_t journal_tid) override;
 
-  uint64_t append_journal_event(bool synchronous) override;
+  void send_object_requests(const ObjectExtents &object_extents,
+                            const ::SnapContext &snapc,
+                            ObjectRequests *object_requests) override;
+  ObjectRequestHandle *create_object_request(
+      const ObjectExtent &object_extent, const ::SnapContext &snapc,
+      Context *on_finish) override;
+
+  uint64_t append_journal_event(const ObjectRequests &requests,
+                                bool synchronous) override;
   void update_stats(size_t length) override;
 private:
   bufferlist m_data_bl;
@@ -318,13 +393,17 @@ public:
 protected:
   void send_image_cache_request() override;
 
+  void send_object_cache_requests(const ObjectExtents &object_extents,
+                                  uint64_t journal_tid) override;
+
   void assemble_extent(const ObjectExtent &object_extent, bufferlist *bl);
 
-  ObjectDispatchSpec *create_object_request(
-      const ObjectExtent &object_extent, const ::SnapContext &snapc,
-      uint64_t journal_tid, Context *on_finish) override;
+  ObjectRequestHandle *create_object_request(const ObjectExtent &object_extent,
+                                             const ::SnapContext &snapc,
+                                             Context *on_finish) override;
 
-  uint64_t append_journal_event(bool synchronous) override;
+  uint64_t append_journal_event(const ObjectRequests &requests,
+                                bool synchronous) override;
   void update_stats(size_t length) override;
 
   aio_type_t get_aio_type() const override {
@@ -334,9 +413,7 @@ protected:
     return "aio_compare_and_write";
   }
 
-  int validate_object_extents(
-      const ObjectExtents &object_extents) const override;
-
+  int prune_object_extents(ObjectExtents &object_extents) override;
 private:
   bufferlist m_cmp_bl;
   bufferlist m_bl;

@@ -10,7 +10,7 @@
 
 struct md_config_t;
 
-class TracepointProvider : public md_config_obs_t {
+class TracepointProvider : public md_config_obs_t, boost::noncopyable {
 public:
   struct Traits {
     const char *library;
@@ -49,16 +49,11 @@ public:
                      const char *config_key);
   ~TracepointProvider() override;
 
-  TracepointProvider(const TracepointProvider&) = delete;
-  TracepointProvider operator =(const TracepointProvider&) = delete;
-  TracepointProvider(TracepointProvider&&) = delete;
-  TracepointProvider operator =(TracepointProvider&&) = delete;
-
   template <const Traits &traits>
   static void initialize(CephContext *cct) {
 #ifdef WITH_LTTNG
-     cct->lookup_or_create_singleton_object<TypedSingleton<traits>>(
-       traits.library, false, cct);
+    TypedSingleton<traits> *singleton;
+    cct->lookup_or_create_singleton_object(singleton, traits.library);
 #endif
   }
 

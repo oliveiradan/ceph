@@ -91,7 +91,7 @@ void add_devices(
     if (id >= 0) {
       got.insert(id);
       cout << " slot " << id << " " << i << std::endl;
-      int r = fs->add_block_device(id, i, false);
+      int r = fs->add_block_device(id, i);
       if (r < 0) {
 	cerr << "unable to open " << i << ": " << cpp_strerror(r) << std::endl;
 	exit(EXIT_FAILURE);
@@ -103,7 +103,7 @@ void add_devices(
     if (got.count(BlueFS::BDEV_DB))
       id = BlueFS::BDEV_SLOW;
     cout << " slot " << id << " " << main << std::endl;
-    int r = fs->add_block_device(id, main, false);
+    int r = fs->add_block_device(id, main);
     if (r < 0) {
       cerr << "unable to open " << main << ": " << cpp_strerror(r)
 	   << std::endl;
@@ -151,9 +151,9 @@ BlueFS *open_bluefs(
   return fs;
 }
 
-void inferring_bluefs_devices(vector<string>& devs, std::string& path)
+void infering_bluefs_devices(vector<string>& devs, std::string& path)
 {
-  cout << "inferring bluefs devices from bluestore path" << std::endl;
+  cout << "infering bluefs devices from bluestore path" << std::endl;
   for (auto fn : {"block", "block.wal", "block.db"}) {
     string p = path + "/" + fn;
     struct stat st;
@@ -254,7 +254,7 @@ int main(int argc, char **argv)
       exit(EXIT_FAILURE);
     }
     if (devs.empty())
-      inferring_bluefs_devices(devs, path);
+      infering_bluefs_devices(devs, path);
   }
   if (action == "bluefs-export" || action == "bluefs-log-dump") {
     if (path.empty()) {
@@ -265,14 +265,14 @@ int main(int argc, char **argv)
       cerr << "must specify out-dir to export bluefs" << std::endl;
       exit(EXIT_FAILURE);
     }
-    inferring_bluefs_devices(devs, path);
+    infering_bluefs_devices(devs, path);
   }
   if (action == "bluefs-bdev-sizes" || action == "bluefs-bdev-expand") {
     if (path.empty()) {
       cerr << "must specify bluestore path" << std::endl;
       exit(EXIT_FAILURE);
     }
-    inferring_bluefs_devices(devs, path);
+    infering_bluefs_devices(devs, path);
   }
 
   vector<const char*> args;
@@ -292,6 +292,7 @@ int main(int argc, char **argv)
   for (auto& i : ceph_option_strings) {
     args.push_back(i.c_str());
   }
+  env_to_vec(args);
 
   auto cct = global_init(NULL, args, CEPH_ENTITY_TYPE_CLIENT,
 			 CODE_ENVIRONMENT_UTILITY, 0);

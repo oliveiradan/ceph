@@ -23,13 +23,12 @@ def download(ctx, config):
     Download the Swift API.
     """
     testdir = teuthology.get_testdir(ctx)
-    assert isinstance(config, dict)
+    assert isinstance(config, list)
     log.info('Downloading swift...')
-    for (client, cconf) in config.items():
+    for client in config:
         ctx.cluster.only(client).run(
             args=[
                 'git', 'clone',
-                '-b', cconf.get('force-branch', 'ceph-master'),
                 teuth_config.ceph_git_base_url + 'swift.git',
                 '{tdir}/swift'.format(tdir=testdir),
                 ],
@@ -39,7 +38,7 @@ def download(ctx, config):
     finally:
         log.info('Removing swift...')
         testdir = teuthology.get_testdir(ctx)
-        for (client, _) in config.items():
+        for client in config:
             ctx.cluster.only(client).run(
                 args=[
                     'rm',
@@ -221,7 +220,6 @@ def task(ctx, config):
             client.1:
               extra_args: ['--exclude', 'TestFile']
     """
-    assert hasattr(ctx, 'rgw'), 'swift must run after the rgw task'
     assert config is None or isinstance(config, list) \
         or isinstance(config, dict), \
         "task testswift only supports a list or dictionary for configuration"
@@ -237,23 +235,20 @@ def task(ctx, config):
 
     testswift_conf = {}
     for client in clients:
-        endpoint = ctx.rgw.role_endpoints.get(client)
-        assert endpoint, 'swift: no rgw endpoint for {}'.format(client)
-
         testswift_conf[client] = ConfigObj(
                 indent_type='',
                 infile={
                     'func_test':
                         {
-                        'auth_port'      : endpoint.port,
-                        'auth_ssl' : 'yes' if endpoint.cert else 'no',
+                        'auth_port'      : 7280,
+                        'auth_ssl' : 'no',
                         'auth_prefix' : '/auth/',
                         },
                     }
                 )
 
     with contextutil.nested(
-        lambda: download(ctx=ctx, config=config),
+        lambda: download(ctx=ctx, config=clients),
         lambda: create_users(ctx=ctx, config=dict(
                 clients=clients,
                 testswift_conf=testswift_conf,

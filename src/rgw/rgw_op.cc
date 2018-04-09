@@ -49,16 +49,6 @@
 
 #include "compressor/Compressor.h"
 
-#ifdef WITH_LTTNG
-#define TRACEPOINT_DEFINE
-#define TRACEPOINT_PROBE_DYNAMIC_LINKAGE
-#include "tracing/rgw_op.h"
-#undef TRACEPOINT_PROBE_DYNAMIC_LINKAGE
-#undef TRACEPOINT_DEFINE
-#else
-#define tracepoint(...)
-#endif
-
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_rgw
 
@@ -153,9 +143,9 @@ static int decode_policy(CephContext *cct,
     ldout(cct, 0) << "ERROR: could not decode policy, caught buffer::error" << dendl;
     return -EIO;
   }
-  if (cct->_conf->subsys.should_gather<ceph_subsys_rgw, 15>()) {
-    ldout(cct, 15) << __func__ << " Read AccessControlPolicy";
+  if (cct->_conf->subsys.should_gather(ceph_subsys_rgw, 15)) {
     RGWAccessControlPolicy_S3 *s3policy = static_cast<RGWAccessControlPolicy_S3 *>(policy);
+    ldout(cct, 15) << __func__ << " Read AccessControlPolicy";
     s3policy->to_xml(*_dout);
     *_dout << dendl;
   }
@@ -1030,7 +1020,7 @@ int RGWOp::read_bucket_cors()
     ldout(s->cct, 0) << "ERROR: could not decode policy, caught buffer::error" << dendl;
     return -EIO;
   }
-  if (s->cct->_conf->subsys.should_gather<ceph_subsys_rgw, 15>()) {
+  if (s->cct->_conf->subsys.should_gather(ceph_subsys_rgw, 15)) {
     RGWCORSConfiguration_S3 *s3cors = static_cast<RGWCORSConfiguration_S3 *>(&bucket_cors);
     ldout(s->cct, 15) << "Read RGWCORSConfiguration";
     s3cors->to_xml(*_dout);
@@ -3515,7 +3505,7 @@ void RGWPutObj::execute()
       op_ret = -ENOENT;
       goto done;
     }
-    lst = astate->accounted_size - 1;
+    lst = astate->size - 1;
   } else {
     lst = copy_source_range_lst;
   }
@@ -3542,7 +3532,6 @@ void RGWPutObj::execute()
     }
   }
 
-  tracepoint(rgw_op, before_data_transfer, s->req_id.c_str());
   do {
     bufferlist data;
     if (fst > lst)
@@ -3633,7 +3622,6 @@ void RGWPutObj::execute()
 
     ofs += len;
   } while (len > 0);
-  tracepoint(rgw_op, after_data_transfer, s->req_id.c_str(), ofs);
 
   {
     bufferlist flush;
@@ -3741,11 +3729,9 @@ void RGWPutObj::execute()
     emplace_attr(RGW_ATTR_SLO_UINDICATOR, std::move(slo_userindicator_bl));
   }
 
-  tracepoint(rgw_op, processor_complete_enter, s->req_id.c_str());
   op_ret = processor->complete(s->obj_size, etag, &mtime, real_time(), attrs,
                                (delete_at ? *delete_at : real_time()), if_match, if_nomatch,
                                (user_data.empty() ? nullptr : &user_data));
-  tracepoint(rgw_op, processor_complete_exit, s->req_id.c_str());
 
   // only atomic upload will upate version_id here
   if (!multipart) 
@@ -4920,7 +4906,7 @@ void RGWPutACLs::execute()
     }
   }
 
-  if (s->cct->_conf->subsys.should_gather<ceph_subsys_rgw, 15>()) {
+  if (s->cct->_conf->subsys.should_gather(ceph_subsys_rgw, 15)) {
     ldout(s->cct, 15) << "Old AccessControlPolicy";
     policy->to_xml(*_dout);
     *_dout << dendl;
@@ -4930,7 +4916,7 @@ void RGWPutACLs::execute()
   if (op_ret < 0)
     return;
 
-  if (s->cct->_conf->subsys.should_gather<ceph_subsys_rgw, 15>()) {
+  if (s->cct->_conf->subsys.should_gather(ceph_subsys_rgw, 15)) {
     ldout(s->cct, 15) << "New AccessControlPolicy:";
     new_policy.to_xml(*_dout);
     *_dout << dendl;
@@ -5033,7 +5019,7 @@ void RGWPutLC::execute()
   if (op_ret < 0)
     return;
 
-  if (s->cct->_conf->subsys.should_gather<ceph_subsys_rgw, 15>()) {
+  if (s->cct->_conf->subsys.should_gather(ceph_subsys_rgw, 15)) {
     ldout(s->cct, 15) << "New LifecycleConfiguration:";
     new_config.to_xml(*_dout);
     *_dout << dendl;

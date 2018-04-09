@@ -3,7 +3,6 @@
 
 #include "include/compat.h"
 #include "common/Formatter.h"
-#include "common/admin_socket.h"
 #include "common/debug.h"
 #include "common/errno.h"
 #include "include/stringify.h"

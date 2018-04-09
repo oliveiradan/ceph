@@ -59,7 +59,7 @@ struct EntryQueue {
     Entry *t;
     while (m_head) {
       t = m_head->m_next;
-      m_head->destroy();
+      delete m_head;
       m_head = t;
     }      
   }

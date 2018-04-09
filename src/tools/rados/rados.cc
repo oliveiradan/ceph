@@ -2918,12 +2918,10 @@ static int rados_tool_common(const std::map < std::string, std::string > &opts,
     ret = rados.pool_delete(nargs[1]);
     if (ret >= 0) {
       cout << "successfully deleted pool " << nargs[1] << std::endl;
-    } else {
+    } else { //error
       cerr << "pool " << nargs[1] << " could not be removed" << std::endl;
-      if (ret == -EPERM) {
-	cerr << "Check your monitor configuration - `mon allow pool delete` is set to false by default,"
-	     << " change it to true to allow deletion of pools" << std::endl;
-      }
+      cerr << "Check your monitor configuration - `mon allow pool delete` is set to false by default,"
+     << " change it to true to allow deletion of pools" << std::endl;
     }
   }
   else if (strcmp(nargs[0], "purge") == 0) {
@@ -3707,14 +3705,7 @@ int main(int argc, const char **argv)
 {
   vector<const char*> args;
   argv_to_vec(argc, argv, args);
-  if (args.empty()) {
-    cerr << argv[0] << ": -h or --help for usage" << std::endl;
-    exit(1);
-  }
-  if (ceph_argparse_need_usage(args)) {
-    usage(cout);
-    exit(0);
-  }
+  env_to_vec(args);
 
   std::map < std::string, std::string > opts;
   std::string val;
@@ -3750,6 +3741,9 @@ int main(int argc, const char **argv)
   for (i = args.begin(); i != args.end(); ) {
     if (ceph_argparse_double_dash(args, i)) {
       break;
+    } else if (ceph_argparse_flag(args, i, "-h", "--help", (char*)NULL)) {
+      usage(cout);
+      exit(0);
     } else if (ceph_argparse_flag(args, i, "--force-full", (char*)NULL)) {
       opts["force-full"] = "true";
     } else if (ceph_argparse_flag(args, i, "-d", "--delete-after", (char*)NULL)) {

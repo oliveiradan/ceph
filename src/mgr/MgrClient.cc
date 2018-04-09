@@ -174,8 +174,6 @@ void MgrClient::_send_open()
       open->service_daemon = service_daemon;
       open->daemon_metadata = daemon_metadata;
     }
-    cct->_conf->get_config_bl(0, &open->config_bl, &last_config_bl_version);
-    cct->_conf->get_defaults_bl(&open->config_defaults_bl);
     session->con->send_message(open);
   }
 }
@@ -218,20 +216,20 @@ bool MgrClient::ms_handle_refused(Connection *con)
   return false;
 }
 
-void MgrClient::_send_stats()
+void MgrClient::send_stats()
 {
-  _send_report();
-  _send_pgstats();
+  send_report();
+  send_pgstats();
   if (stats_period != 0) {
     report_callback = timer.add_event_after(
       stats_period,
       new FunctionContext([this](int) {
-	  _send_stats();
+	  send_stats();
 	}));
   }
 }
 
-void MgrClient::_send_report()
+void MgrClient::send_report()
 {
   assert(lock.is_locked_by_me());
   assert(session);
@@ -294,8 +292,7 @@ void MgrClient::_send_report()
 	  type.nick = data.nick;
 	}
 	type.type = data.type;
-       type.priority = perf_counters.get_adjusted_priority(data.prio);
-	type.unit = data.unit;
+        type.priority = perf_counters.get_adjusted_priority(data.prio);
 	report->declare_types.push_back(std::move(type));
 	session->declared.insert(path);
       }
@@ -329,21 +326,11 @@ void MgrClient::_send_report()
     daemon_dirty_status = false;
   }
 
-  report->daemon_health_metrics = std::move(daemon_health_metrics);
-
-  cct->_conf->get_config_bl(last_config_bl_version, &report->config_bl,
-			    &last_config_bl_version);
-
+  report->osd_health_metrics = std::move(osd_health_metrics);
   session->con->send_message(report);
 }
 
 void MgrClient::send_pgstats()
-{
-  Mutex::Locker l(lock);
-  _send_pgstats();
-}
-
-void MgrClient::_send_pgstats()
 {
   if (pgstats_cb && session) {
     session->con->send_message(pgstats_cb());
@@ -372,7 +359,7 @@ bool MgrClient::handle_mgr_configure(MMgrConfigure *m)
   bool starting = (stats_period == 0) && (m->stats_period != 0);
   stats_period = m->stats_period;
   if (starting) {
-    _send_stats();
+    send_stats();
   }
 
   m->put();
@@ -482,8 +469,7 @@ int MgrClient::service_daemon_update_status(
   return 0;
 }
 
-void MgrClient::update_daemon_health(std::vector<DaemonHealthMetric>&& metrics)
+void MgrClient::update_osd_health(std::vector<OSDHealthMetric>&& metrics)
 {
-  daemon_health_metrics = std::move(metrics);
+  osd_health_metrics = std::move(metrics);
 }
-

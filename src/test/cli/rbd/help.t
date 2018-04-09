@@ -30,7 +30,6 @@
       group image remove (group image rm) Remove an image from a group.
       group list (group ls)               List rbd groups.
       group remove (group rm)             Delete a group.
-      group rename                        Rename a group within pool.
       group snap create                   Make a snapshot of a group.
       group snap list (group snap ls)     List snapshots of a group.
       group snap remove (group snap rm)   Remove a snapshot from a group.
@@ -93,7 +92,7 @@
       snap limit set                      Limit the number of snapshots.
       snap list (snap ls)                 Dump list of image snapshots.
       snap protect                        Prevent a snapshot from being deleted.
-      snap purge                          Delete all unprotected snapshots.
+      snap purge                          Delete all snapshots.
       snap remove (snap rm)               Delete a snapshot.
       snap rename                         Rename a snapshot.
       snap rollback (snap revert)         Rollback image to snapshot.
@@ -143,9 +142,8 @@
     --io-type arg        IO type (read , write, or readwrite(rw))
   
   rbd help children
-  usage: rbd children [--pool <pool>] [--image <image>] [--snap <snap>] 
-                      [--snap-id <snap-id>] [--all] [--format <format>] 
-                      [--pretty-format] 
+  usage: rbd children [--pool <pool>] [--image <image>] [--snap <snap>] [--all] 
+                      [--format <format>] [--pretty-format] 
                       <snap-spec> 
   
   Display children of snapshot.
@@ -158,7 +156,6 @@
     -p [ --pool ] arg    pool name
     --image arg          image name
     --snap arg           snapshot name
-    --snap-id arg        snapshot id
     -a [ --all ]         list all children of snapshot (include trash)
     --format arg         output format (plain, json, or xml) [default: plain]
     --pretty-format      pretty formatting (json and xml)
@@ -266,8 +263,7 @@
                     [--stripe-count <stripe-count>] [--data-pool <data-pool>] 
                     [--journal-splay-width <journal-splay-width>] 
                     [--journal-object-size <journal-object-size>] 
-                    [--journal-pool <journal-pool>] 
-                    [--thick-provision] --size <size> [--no-progress] 
+                    [--journal-pool <journal-pool>] --size <size> 
                     <image-spec> 
   
   Create an empty image.
@@ -294,9 +290,7 @@
     --journal-splay-width arg number of active journal objects
     --journal-object-size arg size of journal objects
     --journal-pool arg        pool for journal objects
-    --thick-provision         fully allocate storage and zero image
     -s [ --size ] arg         image size (in M/G/T) [default: M]
-    --no-progress             disable progress output
   
   Image Features:
     (*) supports enabling/disabling on existing images
@@ -637,25 +631,6 @@
   Optional arguments
     -p [ --pool ] arg    pool name
     --group arg          group name
-  
-  rbd help group rename
-  usage: rbd group rename [--pool <pool>] [--group <group>] 
-                          [--dest-pool <dest-pool>] [--dest-group <dest-group>] 
-                          <source-group-spec> <dest-group-spec> 
-  
-  Rename a group within pool.
-  
-  Positional arguments
-    <source-group-spec>  source group specification
-                         (example: [<pool-name>/]<group-name>)
-    <dest-group-spec>    destination group specification
-                         (example: [<pool-name>/]<group-name>)
-  
-  Optional arguments
-    -p [ --pool ] arg    source pool name
-    --group arg          source group name
-    --dest-pool arg      destination pool name
-    --dest-group arg     destination group name
   
   rbd help group snap create
   usage: rbd group snap create [--pool <pool>] [--group <group>] [--snap <snap>] 
@@ -1485,7 +1460,7 @@
                         [--image-id <image-id>] [--no-progress] 
                         <image-spec> 
   
-  Delete all unprotected snapshots.
+  Delete all snapshots.
   
   Positional arguments
     <image-spec>         image specification

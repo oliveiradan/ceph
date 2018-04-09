@@ -20,7 +20,7 @@
 #include "msg/Message.h"
 
 #include "common/perf_counters.h"
-#include "mgr/DaemonHealthMetric.h"
+#include "osd/OSDHealthMetric.h"
 
 class PerfCounterType
 {
@@ -34,36 +34,31 @@ public:
   // is "useful" so that mgr plugins filtering on prio will get some
   // data (albeit probably more than they wanted)
   uint8_t priority = PerfCountersBuilder::PRIO_USEFUL;
-  enum unit_t unit;
 
   void encode(bufferlist &bl) const
   {
     // TODO: decide whether to drop the per-type
     // encoding here, we could rely on the MgrReport
     // verisoning instead.
-    ENCODE_START(3, 1, bl);
+    ENCODE_START(2, 1, bl);
     encode(path, bl);
     encode(description, bl);
     encode(nick, bl);
     static_assert(sizeof(type) == 1, "perfcounter_type_d must be one byte");
     encode((uint8_t)type, bl);
     encode(priority, bl);
-    encode((uint8_t)unit, bl);
     ENCODE_FINISH(bl);
   }
   
   void decode(bufferlist::iterator &p)
   {
-    DECODE_START(3, p);
+    DECODE_START(2, p);
     decode(path, p);
     decode(description, p);
     decode(nick, p);
     decode((uint8_t&)type, p);
     if (struct_v >= 2) {
       decode(priority, p);
-    }
-    if (struct_v >= 3) {
-      decode((uint8_t&)unit, p);
     }
     DECODE_FINISH(p);
   }
@@ -72,7 +67,7 @@ WRITE_CLASS_ENCODER(PerfCounterType)
 
 class MMgrReport : public Message
 {
-  static const int HEAD_VERSION = 6;
+  static const int HEAD_VERSION = 5;
   static const int COMPAT_VERSION = 1;
 
 public:
@@ -98,10 +93,7 @@ public:
   // for service registration
   boost::optional<std::map<std::string,std::string>> daemon_status;
 
-  std::vector<DaemonHealthMetric> daemon_health_metrics;
-
-  // encode map<string,map<int32_t,string>> of current config
-  bufferlist config_bl;
+  std::vector<OSDHealthMetric> osd_health_metrics;
 
   void decode_payload() override
   {
@@ -116,10 +108,7 @@ public:
       decode(daemon_status, p);
     }
     if (header.version >= 5) {
-      decode(daemon_health_metrics, p);
-    }
-    if (header.version >= 6) {
-      decode(config_bl, p);
+      decode(osd_health_metrics, p);
     }
   }
 
@@ -131,8 +120,7 @@ public:
     encode(undeclare_types, payload);
     encode(service_name, payload);
     encode(daemon_status, payload);
-    encode(daemon_health_metrics, payload);
-    encode(config_bl, payload);
+    encode(osd_health_metrics, payload);
   }
 
   const char *get_type_name() const override { return "mgrreport"; }
@@ -150,8 +138,8 @@ public:
     if (daemon_status) {
       out << " status=" << daemon_status->size();
     }
-    if (!daemon_health_metrics.empty()) {
-      out << " daemon_metrics=" << daemon_health_metrics.size();
+    if (!osd_health_metrics.empty()) {
+      out << " osd_metrics=" << osd_health_metrics.size();
     }
     out << ")";
   }

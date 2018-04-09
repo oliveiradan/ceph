@@ -5,7 +5,7 @@
  * CRUSH functions for find rules and then mapping an input to an
  * output set.
  *
- * LGPL2.1
+ * LGPL2
  */
 
 #include "crush.h"

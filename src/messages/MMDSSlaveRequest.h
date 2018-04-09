@@ -117,12 +117,11 @@ class MMDSSlaveRequest : public Message {
   set<mds_rank_t> witnesses;
   bufferlist inode_export;
   version_t inode_export_v;
+  bufferlist srci_replica;
   mds_rank_t srcdn_auth;
   utime_t op_stamp;
 
-  bufferlist straybl;  // stray dir + dentry
-  bufferlist srci_snapbl;
-  bufferlist desti_snapbl;
+  bufferlist stray;  // stray dir + dentry
 
 public:
   metareqid_t get_reqid() { return reqid; }
@@ -149,7 +148,6 @@ public:
   void mark_interrupted() { flags |= FLAG_INTERRUPTED; }
 
   void set_lock_type(int t) { lock_type = t; }
-  bufferlist& get_lock_data() { return inode_export; }
 
 
   // ----
@@ -178,9 +176,8 @@ public:
     encode(inode_export, payload);
     encode(inode_export_v, payload);
     encode(srcdn_auth, payload);
-    encode(straybl, payload);
-    encode(srci_snapbl, payload);
-    encode(desti_snapbl, payload);
+    encode(srci_replica, payload);
+    encode(stray, payload);
   }
   void decode_payload() override {
     bufferlist::iterator p = payload.begin();
@@ -198,9 +195,8 @@ public:
     decode(inode_export, p);
     decode(inode_export_v, p);
     decode(srcdn_auth, p);
-    decode(straybl, p);
-    decode(srci_snapbl, p);
-    decode(desti_snapbl, p);
+    decode(srci_replica, p);
+    decode(stray, p);
   }
 
   const char *get_type_name() const override { return "slave_request"; }

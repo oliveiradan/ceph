@@ -73,7 +73,7 @@ class PosixConnectedSocketImpl final : public ConnectedSocketImpl {
   }
 
   // return the sent length
-  // < 0 means error occurred
+  // < 0 means error occured
   static ssize_t do_sendmsg(int fd, struct msghdr &msg, unsigned len, bool more)
   {
     size_t sent = 0;

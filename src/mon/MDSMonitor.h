@@ -73,8 +73,7 @@ class MDSMonitor : public PaxosService {
   FSMap pending_fsmap;  // current + pending updates
 
   // my helpers
-  template<int dblV = 7>
-  void print_map(FSMap &m);
+  void print_map(FSMap &m, int dbl=7);
 
   void _updated(MonOpRequestRef op);
 

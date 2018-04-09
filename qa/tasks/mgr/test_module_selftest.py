@@ -19,9 +19,6 @@ class TestModuleSelftest(MgrTestCase):
     """
     MGRS_REQUIRED = 1
 
-    def setUp(self):
-        self.setup_mgrs()
-
     def _selftest_plugin(self, module_name):
         self._load_module(module_name)
 

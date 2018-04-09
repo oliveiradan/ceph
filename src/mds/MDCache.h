@@ -31,7 +31,6 @@
 #include "events/EMetaBlob.h"
 #include "RecoveryQueue.h"
 #include "StrayManager.h"
-#include "OpenFileTable.h"
 #include "MDSContext.h"
 #include "MDSMap.h"
 #include "Mutation.h"
@@ -62,7 +61,6 @@ struct MMDSFindIno;
 struct MMDSFindInoReply;
 struct MMDSOpenIno;
 struct MMDSOpenInoReply;
-class MMDSSnapUpdate;
 
 class Message;
 class MClientRequest;
@@ -472,8 +470,7 @@ protected:
   bool resolves_pending;
   set<mds_rank_t> resolve_gather;	// nodes i need resolves from
   set<mds_rank_t> resolve_ack_gather;	// nodes i need a resolve_ack from
-  set<version_t> resolve_snapclient_commits;
-  map<metareqid_t, mds_rank_t> resolve_need_rollback;  // rollbacks i'm writing to the journal
+  map<metareqid_t, mds_rank_t> need_resolve_rollback;  // rollbacks i'm writing to the journal
   map<mds_rank_t, MMDSResolve*> delayed_resolve;
   
   void handle_resolve(MMDSResolve *m);
@@ -487,11 +484,6 @@ protected:
   void add_uncommitted_slave_update(metareqid_t reqid, mds_rank_t master, MDSlaveUpdate*);
   void finish_uncommitted_slave_update(metareqid_t reqid, mds_rank_t master);
   MDSlaveUpdate* get_uncommitted_slave_update(metareqid_t reqid, mds_rank_t master);
-
-  void send_slave_resolves();
-  void send_subtree_resolves();
-  void maybe_finish_slave_resolve();
-
 public:
   void recalc_auth_bits(bool replay);
   void remove_inode_recursive(CInode *in);
@@ -513,7 +505,7 @@ public:
   }
 
   void add_rollback(metareqid_t reqid, mds_rank_t master) {
-    resolve_need_rollback[reqid] = master;
+    need_resolve_rollback[reqid] = master;
   }
   void finish_rollback(metareqid_t reqid);
 
@@ -531,6 +523,8 @@ public:
   void finish_ambiguous_import(dirfrag_t dirino);
   void resolve_start(MDSInternalContext *resolve_done_);
   void send_resolves();
+  void send_slave_resolves();
+  void send_subtree_resolves();
   void maybe_send_pending_resolves() {
     if (resolves_pending)
       send_subtree_resolves();
@@ -602,12 +596,6 @@ public:
 			     mds_rank_t frommds=MDS_RANK_NONE) {
     cap_imports[ino][client][frommds] = icr;
   }
-  bool rejoin_has_cap_reconnect(inodeno_t ino) const {
-    return cap_imports.count(ino);
-  }
-  void add_replay_ino_alloc(inodeno_t ino) {
-    cap_imports_missing.insert(ino); // avoid opening ino during cache rejoin
-  }
   const cap_reconnect_t *get_replay_cap_reconnect(inodeno_t ino, client_t client) {
     if (cap_imports.count(ino) &&
 	cap_imports[ino].count(client) &&
@@ -655,24 +643,22 @@ public:
   friend class C_MDC_RejoinOpenInoFinish;
   friend class C_MDC_RejoinSessionsOpened;
   void rejoin_open_ino_finish(inodeno_t ino, int ret);
-  void rejoin_prefetch_ino_finish(inodeno_t ino, int ret);
   void rejoin_open_sessions_finish(map<client_t,entity_inst_t> client_map,
 				   map<client_t,uint64_t>& sseqmap);
   bool process_imported_caps();
   void choose_lock_states_and_reconnect_caps();
   void prepare_realm_split(SnapRealm *realm, client_t client, inodeno_t ino,
 			   map<client_t,MClientSnap*>& splits);
-  void prepare_realm_merge(SnapRealm *realm, SnapRealm *parent_realm, map<client_t,MClientSnap*>& splits);
+  void do_realm_invalidate_and_update_notify(CInode *in, int snapop, bool nosend=false);
   void send_snaps(map<client_t,MClientSnap*>& splits);
   Capability* rejoin_import_cap(CInode *in, client_t client, const cap_reconnect_t& icr, mds_rank_t frommds);
-  void finish_snaprealm_reconnect(client_t client, SnapRealm *realm, snapid_t seq,
-				  map<client_t,MClientSnap*>& updates);
+  void finish_snaprealm_reconnect(client_t client, SnapRealm *realm, snapid_t seq);
   void try_reconnect_cap(CInode *in, Session *session);
   void export_remaining_imported_caps();
 
-  //  realm inodes
-  set<CInode*> rejoin_pending_snaprealms;
   // cap imports.  delayed snap parent opens.
+  //  realm inode -> client -> cap inodes needing to split to this realm
+  map<CInode*,set<CInode*> > missing_snap_parents;
   map<client_t,set<CInode*> > delayed_imported_caps;
 
   void do_cap_import(Session *session, CInode *in, Capability *cap,
@@ -681,7 +667,8 @@ public:
   void do_delayed_cap_imports();
   void rebuild_need_snapflush(CInode *head_in, SnapRealm *realm, client_t client,
 			      snapid_t snap_follows);
-  void open_snaprealms();
+  void check_realm_past_parents(SnapRealm *realm, bool reconnect);
+  void open_snap_parents();
 
   bool open_undef_inodes_dirfrags();
   void opened_undef_inode(CInode *in);
@@ -1047,17 +1034,9 @@ public:
   void kick_find_ino_peers(mds_rank_t who);
 
   // -- snaprealms --
-private:
-  SnapRealm *global_snaprealm;
 public:
-  SnapRealm *get_global_snaprealm() const { return global_snaprealm; }
-  void create_global_snaprealm();
   void snaprealm_create(MDRequestRef& mdr, CInode *in);
   void _snaprealm_create_finish(MDRequestRef& mdr, MutationRef& mut, CInode *in);
-  void do_realm_invalidate_and_update_notify(CInode *in, int snapop, bool notify_clients=true);
-  void send_snap_update(CInode *in, version_t stid, int snap_op);
-  void handle_snap_update(MMDSSnapUpdate *m);
-  void notify_global_snaprealm_update(int snap_op);
 
   // -- stray --
 public:
@@ -1193,12 +1172,14 @@ public:
   void discard_delayed_expire(CDir *dir);
 
 protected:
-  int dump_cache(std::string_view fn, Formatter *f);
+  int dump_cache(std::string_view fn, Formatter *f,
+		  std::string_view dump_root = "",
+		  int depth = -1);
 public:
   int dump_cache() { return dump_cache(NULL, NULL); }
   int dump_cache(std::string_view filename);
   int dump_cache(Formatter *f);
-  void dump_tree(CInode *in, const int cur_depth, const int max_depth, Formatter *f);
+  int dump_cache(std::string_view dump_root, int depth, Formatter *f);
 
   int cache_status(Formatter *f);
 
@@ -1246,8 +1227,6 @@ public:
 public:
   /* Because exports may fail, this set lets us keep track of inodes that need exporting. */
   std::set<CInode *> export_pin_queue;
-
-  OpenFileTable open_file_table;
 };
 
 class C_MDS_RetryRequest : public MDSInternalContext {

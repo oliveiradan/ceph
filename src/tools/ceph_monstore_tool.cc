@@ -827,7 +827,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  vector<const char *> ceph_options;
+  vector<const char *> ceph_options, def_args;
   ceph_options.reserve(ceph_option_strings.size());
   for (vector<string>::iterator i = ceph_option_strings.begin();
        i != ceph_option_strings.end();
@@ -836,9 +836,8 @@ int main(int argc, char **argv) {
   }
 
   auto cct = global_init(
-    NULL, ceph_options, CEPH_ENTITY_TYPE_MON,
-    CODE_ENVIRONMENT_UTILITY,
-    CINIT_FLAG_NO_MON_CONFIG);
+    &def_args, ceph_options, CEPH_ENTITY_TYPE_MON,
+    CODE_ENVIRONMENT_UTILITY, 0);
   common_init_finish(g_ceph_context);
   g_ceph_context->_conf->apply_changes(NULL);
   g_conf = g_ceph_context->_conf;
@@ -878,7 +877,7 @@ int main(int argc, char **argv) {
       ("version,v", po::value<unsigned>(&v),
        "map version to obtain")
       ("readable,r", po::value<bool>(&readable)->default_value(false),
-       "print the map information in human readable format")
+       "print the map infomation in human readable format")
       ;
     // this is going to be a positional argument; we don't want to show
     // it as an option during --help, but we do want to have it captured

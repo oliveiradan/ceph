@@ -156,7 +156,7 @@ typedef ceph::shared_ptr<const OSDMap> OSDMapRef;
      virtual epoch_t get_interval_start_epoch() const = 0;
      virtual epoch_t get_last_peering_reset_epoch() const = 0;
 
-     virtual const set<pg_shard_t> &get_acting_recovery_backfill_shards() const = 0;
+     virtual const set<pg_shard_t> &get_actingbackfill_shards() const = 0;
      virtual const set<pg_shard_t> &get_acting_shards() const = 0;
      virtual const set<pg_shard_t> &get_backfill_shards() const = 0;
 
@@ -166,7 +166,6 @@ typedef ceph::shared_ptr<const OSDMap> OSDMapRef;
        const = 0;
 
      virtual const pg_missing_tracker_t &get_local_missing() const = 0;
-     virtual void add_local_next_event(const pg_log_entry_t& e) = 0;
      virtual const map<pg_shard_t, pg_missing_t> &get_shard_missing()
        const = 0;
      virtual boost::optional<const pg_missing_const_i &> maybe_get_shard_missing(
@@ -216,9 +215,6 @@ typedef ceph::shared_ptr<const OSDMap> OSDMapRef;
        ObcLockManager &manager) = 0;
 
      virtual void release_locks(ObcLockManager &manager) = 0;
-
-     virtual void op_applied(
-       const eversion_t &applied_version) = 0;
 
      virtual bool should_send_op(
        pg_shard_t peer,
@@ -288,7 +284,7 @@ typedef ceph::shared_ptr<const OSDMap> OSDMapRef;
      virtual LogClientTemp clog_error() = 0;
      virtual LogClientTemp clog_warn() = 0;
 
-     virtual bool check_failsafe_full() = 0;
+     virtual bool check_failsafe_full(ostream &ss) = 0;
 
      virtual bool check_osdmap_full(const set<pg_shard_t> &missing_on) = 0;
 

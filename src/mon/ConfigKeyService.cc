@@ -23,7 +23,6 @@
 #include "common/errno.h"
 #include "include/stringify.h"
 
-#include "include/assert.h" // re-clobber assert()
 #define dout_subsys ceph_subsys_mon
 #undef dout_prefix
 #define dout_prefix _prefix(_dout, mon, this)
@@ -34,22 +33,22 @@ static ostream& _prefix(std::ostream *_dout, const Monitor *mon,
                 << "(" << service->get_epoch() << ") ";
 }
 
-const string CONFIG_PREFIX = "mon_config_key";
+const string ConfigKeyService::STORE_PREFIX = "mon_config_key";
 
 int ConfigKeyService::store_get(const string &key, bufferlist &bl)
 {
-  return mon->store->get(CONFIG_PREFIX, key, bl);
+  return mon->store->get(STORE_PREFIX, key, bl);
 }
 
 void ConfigKeyService::get_store_prefixes(set<string>& s) const
 {
-  s.insert(CONFIG_PREFIX);
+  s.insert(STORE_PREFIX);
 }
 
 void ConfigKeyService::store_put(const string &key, bufferlist &bl, Context *cb)
 {
   MonitorDBStore::TransactionRef t = paxos->get_pending_transaction();
-  t->put(CONFIG_PREFIX, key, bl);
+  t->put(STORE_PREFIX, key, bl);
   if (cb)
     paxos->queue_pending_finisher(cb);
   paxos->trigger_propose();
@@ -68,18 +67,18 @@ void ConfigKeyService::store_delete(
     MonitorDBStore::TransactionRef t,
     const string &key)
 {
-  t->erase(CONFIG_PREFIX, key);
+  t->erase(STORE_PREFIX, key);
 }
 
 bool ConfigKeyService::store_exists(const string &key)
 {
-  return mon->store->exists(CONFIG_PREFIX, key);
+  return mon->store->exists(STORE_PREFIX, key);
 }
 
 void ConfigKeyService::store_list(stringstream &ss)
 {
   KeyValueDB::Iterator iter =
-    mon->store->get_iterator(CONFIG_PREFIX);
+    mon->store->get_iterator(STORE_PREFIX);
 
   JSONFormatter f(true);
   f.open_array_section("keys");
@@ -96,7 +95,7 @@ void ConfigKeyService::store_list(stringstream &ss)
 bool ConfigKeyService::store_has_prefix(const string &prefix)
 {
   KeyValueDB::Iterator iter =
-    mon->store->get_iterator(CONFIG_PREFIX);
+    mon->store->get_iterator(STORE_PREFIX);
 
   while (iter->valid()) {
     string key(iter->key());
@@ -109,24 +108,15 @@ bool ConfigKeyService::store_has_prefix(const string &prefix)
   return false;
 }
 
-void ConfigKeyService::store_dump(stringstream &ss, const string& prefix)
+void ConfigKeyService::store_dump(stringstream &ss)
 {
   KeyValueDB::Iterator iter =
-    mon->store->get_iterator(CONFIG_PREFIX);
-
-  dout(10) << __func__ << " prefix '" << prefix << "'" << dendl;
-  if (prefix.size()) {
-    iter->lower_bound(prefix);
-  }
+    mon->store->get_iterator(STORE_PREFIX);
 
   JSONFormatter f(true);
   f.open_object_section("config-key store");
 
   while (iter->valid()) {
-    if (prefix.size() &&
-	iter->key().find(prefix) != 0) {
-      break;
-    }
     f.dump_string(iter->key().c_str(), iter->value().to_str());
     iter->next();
   }
@@ -139,7 +129,7 @@ void ConfigKeyService::store_delete_prefix(
     const string &prefix)
 {
   KeyValueDB::Iterator iter =
-    mon->store->get_iterator(CONFIG_PREFIX);
+    mon->store->get_iterator(STORE_PREFIX);
 
   while (iter->valid()) {
     string key(iter->key());
@@ -260,10 +250,8 @@ bool ConfigKeyService::service_dispatch(MonOpRequestRef op)
     ret = 0;
 
   } else if (prefix == "config-key dump") {
-    string prefix;
-    cmd_getval(g_ceph_context, cmdmap, "key", prefix);
     stringstream tmp_ss;
-    store_dump(tmp_ss, prefix);
+    store_dump(tmp_ss);
     rdata.append(tmp_ss);
     ret = 0;
 

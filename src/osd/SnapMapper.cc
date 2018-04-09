@@ -170,7 +170,7 @@ void SnapMapper::clear_snaps(
   assert(check(oid));
   set<string> to_remove;
   to_remove.insert(to_object_key(oid));
-  if (g_conf->subsys.should_gather<ceph_subsys_osd, 20>()) {
+  if (g_conf->subsys.should_gather(ceph_subsys_osd, 20)) {
     for (auto& i : to_remove) {
       dout(20) << __func__ << " rm " << i << dendl;
     }
@@ -189,7 +189,7 @@ void SnapMapper::set_snaps(
   encode(in, bl);
   to_set[to_object_key(oid)] = bl;
   dout(20) << __func__ << " " << oid << " " << in.snaps << dendl;
-  if (g_conf->subsys.should_gather<ceph_subsys_osd, 20>()) {
+  if (g_conf->subsys.should_gather(ceph_subsys_osd, 20)) {
     for (auto& i : to_set) {
       dout(20) << __func__ << " set " << i.first << dendl;
     }
@@ -228,7 +228,7 @@ int SnapMapper::update_snaps(
       to_remove.insert(to_raw_key(make_pair(*i, oid)));
     }
   }
-  if (g_conf->subsys.should_gather<ceph_subsys_osd, 20>()) {
+  if (g_conf->subsys.should_gather(ceph_subsys_osd, 20)) {
     for (auto& i : to_remove) {
       dout(20) << __func__ << " rm " << i << dendl;
     }
@@ -243,17 +243,11 @@ void SnapMapper::add_oid(
   MapCacher::Transaction<std::string, bufferlist> *t)
 {
   dout(20) << __func__ << " " << oid << " " << snaps << dendl;
-  assert(!snaps.empty());
   assert(check(oid));
   {
     object_snaps out;
     int r = get_snaps(oid, &out);
-    if (r != -ENOENT) {
-      derr << __func__ << " found existing snaps mapped on " << oid
-	   << ", removing" << dendl;
-      assert(!cct->_conf->osd_debug_verify_snaps);
-      remove_oid(oid, t);
-    }
+    assert(r == -ENOENT);
   }
 
   object_snaps _snaps(oid, snaps);
@@ -265,7 +259,7 @@ void SnapMapper::add_oid(
        ++i) {
     to_add.insert(to_raw(make_pair(*i, oid)));
   }
-  if (g_conf->subsys.should_gather<ceph_subsys_osd, 20>()) {
+  if (g_conf->subsys.should_gather(ceph_subsys_osd, 20)) {
     for (auto& i : to_add) {
       dout(20) << __func__ << " set " << i.first << dendl;
     }
@@ -346,7 +340,7 @@ int SnapMapper::_remove_oid(
        ++i) {
     to_remove.insert(to_raw_key(make_pair(*i, oid)));
   }
-  if (g_conf->subsys.should_gather<ceph_subsys_osd, 20>()) {
+  if (g_conf->subsys.should_gather(ceph_subsys_osd, 20)) {
     for (auto& i : to_remove) {
       dout(20) << __func__ << " rm " << i << dendl;
     }

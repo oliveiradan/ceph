@@ -9,7 +9,7 @@
 Synopsis
 ========
 
-| **ceph-fuse** [-n *client.username*] [ -m *monaddr*:*port* ] *mountpoint* [ *fuse options* ]
+| **ceph-fuse** [ -m *monaddr*:*port* ] *mountpoint* [ *fuse options* ]
 
 
 Description
@@ -33,13 +33,9 @@ Options
 
 Any options not recognized by ceph-fuse will be passed on to libfuse.
 
-.. option:: -o opt,[opt...]
-
-   Mount options.
-
 .. option:: -d
 
-   Run in foreground, send all log otuput to stderr and enable FUSE debugging (-o debug).
+   Detach from console and daemonize after startup.
 
 .. option:: -c ceph.conf, --conf=ceph.conf
 
@@ -50,17 +46,10 @@ Any options not recognized by ceph-fuse will be passed on to libfuse.
 
    Connect to specified monitor (instead of looking through ceph.conf).
 
-.. option:: --client_mountpoint/-r root_directory
+.. option:: -r root_directory
 
    Use root_directory as the mounted root, rather than the full Ceph tree.
 
-.. option:: -f
-
-   Foreground: do not daemonize after startup (run in foreground). Do not generate a pid file.
-
-.. option:: -s
-
-   Disable multi-threaded operation.
 
 Availability
 ============

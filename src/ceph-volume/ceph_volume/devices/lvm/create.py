@@ -2,7 +2,6 @@ from __future__ import print_function
 from textwrap import dedent
 import logging
 from ceph_volume.util import system
-from ceph_volume.util.arg_validators import exclude_group_options
 from ceph_volume import decorators, terminal
 from .common import create_parser, rollback_osd
 from .prepare import Prepare
@@ -44,13 +43,18 @@ class Create(object):
         all the metadata to the logical volumes using LVM tags, and starting
         the OSD daemon.
 
-        Existing logical volume (lv) or device:
+        Example calls for supported scenarios:
 
-            ceph-volume lvm create --data {vg name/lv name} --journal /path/to/device
+        Filestore
+        ---------
 
-        Or:
+          Existing logical volume (lv) or device:
 
-            ceph-volume lvm create --data {vg name/lv name} --journal {vg name/lv name}
+              ceph-volume lvm create --filestore --data {vg name/lv name} --journal /path/to/device
+
+          Or:
+
+              ceph-volume lvm create --filestore --data {vg name/lv name} --journal {vg name/lv name}
 
         """)
         parser = create_parser(
@@ -60,7 +64,6 @@ class Create(object):
         if len(self.argv) == 0:
             print(sub_command_help)
             return
-        exclude_group_options(parser, groups=['filestore', 'bluestore'], argv=self.argv)
         args = parser.parse_args(self.argv)
         # Default to bluestore here since defaulting it in add_argument may
         # cause both to be True

@@ -15,10 +15,8 @@
 #ifndef _INCLUDED_RBD_REPLAY_REPLAYER_HPP
 #define _INCLUDED_RBD_REPLAY_REPLAYER_HPP
 
-#include <chrono>
-#include <mutex>
-#include <thread>
-#include <condition_variable>
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include "rbd_replay/ActionTypes.h"
 #include "BoundedBuffer.hpp"
 #include "ImageNameMap.hpp"
@@ -69,10 +67,10 @@ private:
 
   Replayer &m_replayer;
   BoundedBuffer<Action::ptr> m_buffer;
-  std::shared_ptr<std::thread> m_thread;
+  boost::shared_ptr<boost::thread> m_thread;
   std::map<action_id_t, PendingIO::ptr> m_pending_ios;
-  std::mutex m_pending_ios_mutex;
-  std::condition_variable_any m_pending_ios_empty;
+  boost::mutex m_pending_ios_mutex;
+  boost::condition m_pending_ios_empty;
   bool m_done;
 };
 
@@ -130,9 +128,9 @@ public:
 private:
   struct action_tracker_d {
     /// Maps an action ID to the time the action completed
-    std::map<action_id_t, std::chrono::system_clock::time_point> actions;
-    std::shared_mutex mutex;
-    std::condition_variable_any condition;
+    std::map<action_id_t, boost::system_time> actions;
+    boost::shared_mutex mutex;
+    boost::condition condition;
   };
 
   void clear_images();
@@ -153,7 +151,7 @@ private:
   bool m_dump_perf_counters;
 
   std::map<imagectx_id_t, librbd::Image*> m_images;
-  std::shared_mutex m_images_mutex;
+  boost::shared_mutex m_images_mutex;
 
   /// Actions are hashed across the trackers by ID.
   /// Number of trackers should probably be larger than the number of cores and prime.

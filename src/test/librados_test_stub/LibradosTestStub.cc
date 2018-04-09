@@ -152,9 +152,13 @@ extern "C" int rados_conf_parse_env(rados_t cluster, const char *var) {
   librados::TestRadosClient *client =
     reinterpret_cast<librados::TestRadosClient*>(cluster);
   md_config_t *conf = client->cct()->_conf;
-  conf->parse_env(var);
-  conf->apply_changes(NULL);
-  return 0;
+  std::vector<const char*> args;
+  env_to_vec(args, var);
+  int ret = conf->parse_argv(args);
+  if (ret == 0) {
+    conf->apply_changes(NULL);
+  }
+  return ret;
 }
 
 extern "C" int rados_conf_read_file(rados_t cluster, const char *path) {
@@ -1347,7 +1351,7 @@ int cls_log(int level, const char *format, ...) {
     int n = vsnprintf(buf, size, format, ap);
     va_end(ap);
     if ((n > -1 && n < size) || size > 8196) {
-      dout(ceph::dout::need_dynamic(level)) << buf << dendl;
+      dout(level) << buf << dendl;
       return n;
     }
     size *= 2;

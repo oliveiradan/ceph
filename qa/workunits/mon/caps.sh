@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-set -x
-
 tmp=/tmp/cephtest-mon-caps-madness
 
 exit_on_error=1

@@ -228,8 +228,8 @@ class Worker {
 
     plb.add_u64_counter(l_msgr_recv_messages, "msgr_recv_messages", "Network received messages");
     plb.add_u64_counter(l_msgr_send_messages, "msgr_send_messages", "Network sent messages");
-    plb.add_u64_counter(l_msgr_recv_bytes, "msgr_recv_bytes", "Network received bytes", NULL, 0, unit_t(BYTES));
-    plb.add_u64_counter(l_msgr_send_bytes, "msgr_send_bytes", "Network sent bytes", NULL, 0, unit_t(BYTES));
+    plb.add_u64_counter(l_msgr_recv_bytes, "msgr_recv_bytes", "Network received bytes");
+    plb.add_u64_counter(l_msgr_send_bytes, "msgr_send_bytes", "Network sent bytes");
     plb.add_u64_counter(l_msgr_active_connections, "msgr_active_connections", "Active connection number");
     plb.add_u64_counter(l_msgr_created_connections, "msgr_created_connections", "Created connection number");
 
@@ -284,7 +284,7 @@ class Worker {
   }
 };
 
-class NetworkStack {
+class NetworkStack : public CephContext::ForkWatcher {
   std::string type;
   unsigned num_workers = 0;
   ceph::spinlock pool_spin;
@@ -300,7 +300,7 @@ class NetworkStack {
  public:
   NetworkStack(const NetworkStack &) = delete;
   NetworkStack& operator=(const NetworkStack &) = delete;
-  virtual ~NetworkStack() {
+  ~NetworkStack() override {
     for (auto &&w : workers)
       delete w;
   }
@@ -335,6 +335,14 @@ class NetworkStack {
   // direct is used in tests only
   virtual void spawn_worker(unsigned i, std::function<void ()> &&) = 0;
   virtual void join_worker(unsigned i) = 0;
+
+  void handle_pre_fork() override {
+    stop();
+  }
+
+  void handle_post_fork() override {
+    start();
+  }
 
   virtual bool is_ready() { return true; };
   virtual void ready() { };

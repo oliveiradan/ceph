@@ -396,9 +396,12 @@ int main(int argc, char **argv)
   argv_to_vec(argc, (const char **) argv, args);
 
   auto cct = global_init(NULL, args, CEPH_ENTITY_TYPE_CLIENT,
-			 CODE_ENVIRONMENT_UTILITY,
-			 CINIT_FLAG_NO_MON_CONFIG);
+			 CODE_ENVIRONMENT_UTILITY, 0);
   common_init_finish(g_ceph_context);
+
+  const char* env = getenv("CEPH_LIB");
+  std::string directory(env ? env : ".libs");
+  g_conf->set_val_or_die("erasure_code_dir", directory, false);
 
   ::testing::InitGoogleTest(&argc, argv);
 

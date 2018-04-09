@@ -22,47 +22,8 @@ static ostream& _prefix(std::ostream* _dout)
   return *_dout << "-- op tracker -- ";
 }
 
-void OpHistoryServiceThread::break_thread() {
-  queue_spinlock.lock();
-  _external_queue.clear();
-  _break_thread = true;
-  queue_spinlock.unlock();
-}
-
-void* OpHistoryServiceThread::entry() {
-  int sleep_time = 1000;
-  list<pair<utime_t, TrackedOpRef>> internal_queue;
-  while (1) {
-    queue_spinlock.lock();
-    if (_break_thread) {
-      queue_spinlock.unlock();
-      break;
-    }
-    internal_queue.swap(_external_queue);
-    queue_spinlock.unlock();
-    if (internal_queue.empty()) {
-      usleep(sleep_time);
-      if (sleep_time < 128000) {
-        sleep_time <<= 2;
-      }
-    } else {
-      sleep_time = 1000;
-    }
-
-    while (!internal_queue.empty()) {
-      pair<utime_t, TrackedOpRef> op = internal_queue.front();
-      _ophistory->_insert_delayed(op.first, op.second);
-      internal_queue.pop_front();
-    }
-  }
-  return nullptr;
-}
-
-
 void OpHistory::on_shutdown()
 {
-  opsvc.break_thread();
-  opsvc.join();
   Mutex::Locker history_lock(ops_history_lock);
   arrived.clear();
   duration.clear();
@@ -70,15 +31,14 @@ void OpHistory::on_shutdown()
   shutdown = true;
 }
 
-void OpHistory::_insert_delayed(const utime_t& now, TrackedOpRef op)
+void OpHistory::insert(utime_t now, TrackedOpRef op)
 {
   Mutex::Locker history_lock(ops_history_lock);
   if (shutdown)
     return;
-  double opduration = op->get_duration();
-  duration.insert(make_pair(opduration, op));
+  duration.insert(make_pair(op->get_duration(), op));
   arrived.insert(make_pair(op->get_initiated(), op));
-  if (opduration >= history_slow_op_threshold)
+  if (op->get_duration() >= history_slow_op_threshold)
     slow_op.insert(make_pair(op->get_initiated(), op));
   cleanup(now);
 }
@@ -474,7 +434,7 @@ void TrackedOp::mark_event_string(const string &event, utime_t stamp)
 
   {
     Mutex::Locker l(lock);
-    events.emplace_back(stamp, event);
+    events.push_back(Event(stamp, event));
     current = events.back().c_str();
   }
   dout(6) << " seq: " << seq
@@ -492,7 +452,7 @@ void TrackedOp::mark_event(const char *event, utime_t stamp)
 
   {
     Mutex::Locker l(lock);
-    events.emplace_back(stamp, event);
+    events.push_back(Event(stamp, event));
     current = event;
   }
   dout(6) << " seq: " << seq

@@ -126,13 +126,11 @@ configuration details, perform the following steps using ``ceph-deploy``.
 #. Add three OSDs. For the purposes of these instructions, we assume you have an
    unused disk in each node called ``/dev/vdb``.  *Be sure that the device is not currently in use and does not contain any important data.*
 
-     ceph-deploy osd create --data {device} {ceph-node}
+     ceph-deploy osd create {ceph-node}:{device}
 
    For example::
 
-     ceph-deploy osd create --data /dev/vdb node1
-     ceph-deploy osd create --data /dev/vdb node2
-     ceph-deploy osd create --data /dev/vdb node3
+     ceph-deploy osd create node1:vdb node2:vdb node3:vdb
 
 #. Check your cluster's health. ::
 

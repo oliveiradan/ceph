@@ -144,34 +144,6 @@ def format_device(device):
     process.run(command)
 
 
-def _normalize_mount_flags(flags):
-    """
-    Mount flag options have to be a single string, separated by a comma. If the
-    flags are separated by spaces, or with commas and spaces in ceph.conf, the
-    mount options will be passed incorrectly.
-
-    This will help when parsing ceph.conf values return something like::
-
-        ["rw,", "exec,"]
-
-    Or::
-
-        [" rw ,", "exec"]
-
-    :param flags: A list of flags, or a single string of mount flags
-    """
-    if isinstance(flags, list):
-        # ensure that spaces and commas are removed so that they can join
-        # correctly
-        return ','.join([f.strip().strip(',') for f in flags if f])
-
-    # split them, clean them, and join them back again
-    flags = flags.strip().split(' ')
-    return ','.join(
-        [f.strip().strip(',') for f in flags if f]
-    )
-
-
 def mount_osd(device, osd_id):
     destination = '/var/lib/ceph/osd/%s-%s' % (conf.cluster, osd_id)
     command = ['mount', '-t', 'xfs', '-o']
@@ -181,7 +153,7 @@ def mount_osd(device, osd_id):
         default=constants.mount.get('xfs'),
         split=' ',
     )
-    command.append(_normalize_mount_flags(flags))
+    command.extend(flags)
     command.append(device)
     command.append(destination)
     process.run(command)
@@ -298,7 +270,7 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
     process.call(command, stdin=keyring, show_command=True)
 
 
-def osd_mkfs_filestore(osd_id, fsid, keyring):
+def osd_mkfs_filestore(osd_id, fsid):
     """
     Create the files for the OSD to function. A normal call will look like:
 
@@ -318,7 +290,7 @@ def osd_mkfs_filestore(osd_id, fsid, keyring):
     system.chown(journal)
     system.chown(path)
 
-    command = [
+    process.run([
         'ceph-osd',
         '--cluster', conf.cluster,
         # undocumented flag, sets the `type` file to contain 'filestore'
@@ -326,11 +298,9 @@ def osd_mkfs_filestore(osd_id, fsid, keyring):
         '--mkfs',
         '-i', osd_id,
         '--monmap', monmap,
-        '--keyfile', '-', # goes through stdin
         '--osd-data', path,
         '--osd-journal', journal,
         '--osd-uuid', fsid,
         '--setuser', 'ceph',
         '--setgroup', 'ceph'
-    ]
-    process.call(command, stdin=keyring, terminal_verbose=True, show_command=True)
+    ])

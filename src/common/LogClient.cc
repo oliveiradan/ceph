@@ -212,11 +212,8 @@ void LogChannel::do_log(clog_type prio, std::stringstream& ss)
 void LogChannel::do_log(clog_type prio, const std::string& s)
 {
   Mutex::Locker l(channel_lock);
-  if (CLOG_ERROR == prio) {
-    ldout(cct,-1) << "log " << prio << " : " << s << dendl;
-  } else {
-    ldout(cct,0) << "log " << prio << " : " << s << dendl;
-  }
+  int lvl = (prio == CLOG_ERROR ? -1 : 0);
+  ldout(cct,lvl) << "log " << prio << " : " << s << dendl;
   LogEntry e;
   e.stamp = ceph_clock_now();
   // seq and who should be set for syslog/graylog/log_to_mon

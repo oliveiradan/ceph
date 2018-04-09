@@ -20,12 +20,9 @@ ClientIO::ClientIO(tcp::socket& socket,
 
 ClientIO::~ClientIO() = default;
 
-int ClientIO::init_env(CephContext *cct)
+void ClientIO::init_env(CephContext *cct)
 {
   env.init(cct);
-
-  perfcounter->inc(l_rgw_qlen);
-  perfcounter->inc(l_rgw_qactive);
 
   const auto& request = parser.get();
   const auto& headers = request;
@@ -82,7 +79,6 @@ int ClientIO::init_env(CephContext *cct)
   env.set("REMOTE_ADDR", socket.remote_endpoint().address().to_string());
   // TODO: set SERVER_PORT_SECURE if using ssl
   // TODO: set REMOTE_USER if authenticated
-  return 0;
 }
 
 size_t ClientIO::write_data(const char* buf, size_t len)
@@ -126,8 +122,6 @@ size_t ClientIO::read_data(char* buf, size_t max)
 
 size_t ClientIO::complete_request()
 {
-  perfcounter->inc(l_rgw_qlen, -1);
-  perfcounter->inc(l_rgw_qactive, -1);
   return 0;
 }
 

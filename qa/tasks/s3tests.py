@@ -228,24 +228,14 @@ def run_tests(ctx, config):
     """
     assert isinstance(config, dict)
     testdir = teuthology.get_testdir(ctx)
-    attrs = ["!fails_on_rgw", "!lifecycle_expiration"]
+    attrs = ["!fails_on_rgw"]
     # beast parser is strict about unreadable headers
     if ctx.rgw.frontend == 'beast':
         attrs.append("!fails_strict_rfc2616")
     for client, client_config in config.iteritems():
-        (remote,) = ctx.cluster.only(client).remotes.keys()
         args = [
             'S3TEST_CONF={tdir}/archive/s3-tests.{client}.conf'.format(tdir=testdir, client=client),
-            'BOTO_CONFIG={tdir}/boto.cfg'.format(tdir=testdir)
-            ]
-        # the 'requests' library comes with its own ca bundle to verify ssl
-        # certificates - override that to use the system's ca bundle, which
-        # is where the ssl task installed this certificate
-        if remote.os.package_type == 'deb':
-            args += ['REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt']
-        else:
-            args += ['REQUESTS_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt']
-        args += [
+            'BOTO_CONFIG={tdir}/boto.cfg'.format(tdir=testdir),
             '{tdir}/s3-tests/virtualenv/bin/nosetests'.format(tdir=testdir),
             '-w',
             '{tdir}/s3-tests'.format(tdir=testdir),
@@ -255,7 +245,7 @@ def run_tests(ctx, config):
         if client_config is not None and 'extra_args' in client_config:
             args.extend(client_config['extra_args'])
 
-        remote.run(
+        ctx.cluster.only(client).run(
             args=args,
             label="s3 tests against rgw"
             )
@@ -345,7 +335,6 @@ def task(ctx, config):
             client.1:
               extra_args: ['--exclude', 'test_100_continue']
     """
-    assert hasattr(ctx, 'rgw'), 's3tests must run after the rgw task'
     assert config is None or isinstance(config, list) \
         or isinstance(config, dict), \
         "task s3tests only supports a list or dictionary for configuration"
@@ -368,16 +357,13 @@ def task(ctx, config):
 
     s3tests_conf = {}
     for client in clients:
-        endpoint = ctx.rgw.role_endpoints.get(client)
-        assert endpoint, 's3tests: no rgw endpoint for {}'.format(client)
-
         s3tests_conf[client] = ConfigObj(
             indent_type='',
             infile={
                 'DEFAULT':
                     {
-                    'port'      : endpoint.port,
-                    'is_secure' : 'yes' if endpoint.cert else 'no',
+                    'port'      : 7280,
+                    'is_secure' : 'no',
                     },
                 'fixtures' : {},
                 's3 main'  : {},

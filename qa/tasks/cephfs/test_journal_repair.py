@@ -321,10 +321,8 @@ class TestJournalRepair(CephFSTestCase):
         # Should see no snaps
         self.assertEqual(
             json.loads(self.fs.table_tool(["all", "show", "snap"])),
-            {"version": 1,
+            {"version": 0,
              "snapserver": {"last_snap": 1,
-                            "last_created": 1,
-                            "last_destroyed": 1,
                             "pending_noop": [],
                             "snaps": [],
                             "need_to_purge": {},
@@ -365,8 +363,6 @@ class TestJournalRepair(CephFSTestCase):
             json.loads(self.fs.table_tool(["all", "show", "snap"])),
             {"version": 1,
              "snapserver": {"last_snap": 1,
-                            "last_created": 1,
-                            "last_destroyed": 1,
                             "pending_noop": [],
                             "snaps": [],
                             "need_to_purge": {},

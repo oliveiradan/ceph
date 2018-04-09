@@ -45,19 +45,25 @@ public:
   MDCache *mdcache;
   CInode *inode;
 
-  mutable bool open;                        // set to true once all past_parents are opened
-  bool global;
-
+  bool open;                        // set to true once all past_parents are opened
   SnapRealm *parent;
   set<SnapRealm*> open_children;    // active children that are currently open
   set<SnapRealm*> open_past_children;  // past children who has pinned me
   map<inodeno_t, pair<SnapRealm*, set<snapid_t> > > open_past_parents;  // these are explicitly pinned.
   unsigned num_open_past_parents;
 
+
+
   elist<CInode*> inodes_with_caps;             // for efficient realm splits
   map<client_t, xlist<Capability*>* > client_caps;   // to identify clients who need snap notifications
 
-  SnapRealm(MDCache *c, CInode *in);
+  SnapRealm(MDCache *c, CInode *in) : 
+    srnode(),
+    mdcache(c), inode(in),
+    open(false), parent(0),
+    num_open_past_parents(0),
+    inodes_with_caps(0) 
+  { }
 
   bool exists(std::string_view name) const {
     for (map<snapid_t,SnapInfo>::const_iterator p = srnode.snaps.begin();
@@ -69,26 +75,26 @@ public:
     return false;
   }
 
+  bool is_open() const { return open; }
   void _close_parents() { open = false; }
   bool _open_parents(MDSInternalContextBase *retryorfinish, snapid_t first=1, snapid_t last=CEPH_NOSNAP);
   bool open_parents(MDSInternalContextBase *retryorfinish);
   void _remove_missing_parent(snapid_t snapid, inodeno_t parent, int err);
-  bool have_past_parents_open(snapid_t first=1, snapid_t last=CEPH_NOSNAP) const;
+  bool have_past_parents_open(snapid_t first=1, snapid_t last=CEPH_NOSNAP);
   void add_open_past_parent(SnapRealm *parent, snapid_t last);
   void remove_open_past_parent(inodeno_t ino, snapid_t last);
   void close_parents();
 
   void prune_past_parents();
-  bool has_past_parents() const {
-    return !srnode.past_parent_snaps.empty() ||
-	   !srnode.past_parents.empty();
-  }
+  bool has_past_parents() const { return !srnode.past_parents.empty(); }
 
-  void build_snap_set() const;
-  void get_snap_info(map<snapid_t, const SnapInfo*>& infomap, snapid_t first=0, snapid_t last=CEPH_NOSNAP);
+  void build_snap_set(set<snapid_t>& s, 
+		      snapid_t& max_seq, snapid_t& max_last_created, snapid_t& max_last_destroyed,
+		      snapid_t first, snapid_t last) const;
+  void get_snap_info(map<snapid_t,SnapInfo*>& infomap, snapid_t first=0, snapid_t last=CEPH_NOSNAP);
 
-  const bufferlist& get_snap_trace() const;
-  void build_snap_trace() const;
+  const bufferlist& get_snap_trace();
+  void build_snap_trace(bufferlist& snapbl) const;
 
   std::string_view get_snapname(snapid_t snapid, inodeno_t atino);
   snapid_t resolve_snapname(std::string_view name, inodeno_t atino, snapid_t first=0, snapid_t last=CEPH_NOSNAP);
@@ -137,7 +143,7 @@ public:
   void adjust_parent();
 
   void split_at(SnapRealm *child);
-  void merge_to(SnapRealm *newparent);
+  void join(SnapRealm *child);
 
   void add_cap(client_t client, Capability *cap) {
     auto client_caps_entry = client_caps.find(client);
@@ -153,6 +159,7 @@ public:
       client_caps.erase(client);
     }
   }
+
 };
 
 ostream& operator<<(ostream& out, const SnapRealm &realm);

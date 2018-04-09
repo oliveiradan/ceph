@@ -75,6 +75,7 @@ static void format_flags(Formatter *f, uint64_t flags)
 }
 
 static int do_show_info(librados::IoCtx &io_ctx, librbd::Image& image,
+                        const std::string &imgname, const std::string &imgid,
                         const std::string &snapname, Formatter *f)
 {
   librbd::image_info_t info;
@@ -84,11 +85,6 @@ static int do_show_info(librados::IoCtx &io_ctx, librbd::Image& image,
   librbd::mirror_image_info_t mirror_image;
   int r;
 
-  std::string imgname;
-  r = image.get_name(&imgname);
-  if (r < 0)
-    return r;
-
   r = image.stat(info, sizeof(info));
   if (r < 0)
     return r;
@@ -96,13 +92,6 @@ static int do_show_info(librados::IoCtx &io_ctx, librbd::Image& image,
   r = image.old_format(&old_format);
   if (r < 0)
     return r;
-
-  std::string imgid;
-  if (!old_format) {
-    r = image.get_id(&imgid);
-    if (r < 0)
-      return r;
-  }
 
   std::string data_pool;
   if (!old_format) {
@@ -191,8 +180,11 @@ static int do_show_info(librados::IoCtx &io_ctx, librbd::Image& image,
 
   if (f) {
     f->open_object_section("image");
-    f->dump_string("name", imgname);
-    f->dump_string("id", imgid);
+    if (!imgname.empty()) {
+      f->dump_string("name", imgname);
+    } else {
+      f->dump_string("id", imgid);
+    }
     f->dump_unsigned("size", info.size);
     f->dump_unsigned("objects", info.num_objs);
     f->dump_int("order", info.order);
@@ -203,16 +195,13 @@ static int do_show_info(librados::IoCtx &io_ctx, librbd::Image& image,
     f->dump_string("block_name_prefix", prefix);
     f->dump_int("format", (old_format ? 1 : 2));
   } else {
-    std::cout << "rbd image '" << imgname << "':\n"
+    std::cout << "rbd image '" << (imgname.empty() ? imgid : imgname) << "':\n"
               << "\tsize " << prettybyte_t(info.size) << " in "
               << info.num_objs << " objects"
               << std::endl
               << "\torder " << info.order
               << " (" << prettybyte_t(info.obj_size) << " objects)"
               << std::endl;
-    if (!imgid.empty()) {
-      std::cout << "\tid: " << imgid << std::endl;
-    }
     if (!data_pool.empty()) {
       std::cout << "\tdata_pool: " << data_pool << std::endl;
     }
@@ -407,7 +396,8 @@ int execute(const po::variables_map &vm,
     return r;
   }
 
-  r = do_show_info(io_ctx, image, snap_name, formatter.get());
+  r = do_show_info(io_ctx, image, image_name, image_id, snap_name,
+                   formatter.get());
   if (r < 0) {
     std::cerr << "rbd: info: " << cpp_strerror(r) << std::endl;
     return r;

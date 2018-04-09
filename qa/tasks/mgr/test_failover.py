@@ -11,9 +11,6 @@ log = logging.getLogger(__name__)
 class TestFailover(MgrTestCase):
     MGRS_REQUIRED = 2
 
-    def setUp(self):
-        self.setup_mgrs()
-
     def test_timeout(self):
         """
         That when an active mgr stops responding, a standby is promoted

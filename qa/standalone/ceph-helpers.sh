@@ -39,6 +39,11 @@ else
 fi
 
 EXTRA_OPTS=""
+if [ -n "$CEPH_LIB" ]; then
+    EXTRA_OPTS+=" --erasure-code-dir $CEPH_LIB"
+    EXTRA_OPTS+=" --plugin-dir $CEPH_LIB"
+    EXTRA_OPTS+=" --osd-class-dir $CEPH_LIB"
+fi
 
 #! @file ceph-helpers.sh
 #  @brief Toolbox to manage Ceph cluster dedicated to testing
@@ -502,11 +507,6 @@ function create_rbd_pool() {
 function create_pool() {
     ceph osd pool create "$@"
     sleep 1
-}
-
-function delete_pool() {
-    local poolname=$1
-    ceph osd pool delete $poolname $poolname --yes-i-really-really-mean-it
 }
 
 #######################################################################
@@ -1337,8 +1337,6 @@ function test_is_clean() {
 
 #######################################################################
 
-calc() { awk "BEGIN{print $*}"; }
-
 ##
 # Return a list of numbers that are increasingly larger and whose
 # total is **timeout** seconds. It can be used to have short sleep
@@ -1358,29 +1356,29 @@ function get_timeout_delays() {
     local i
     local total="0"
     i=$first_step
-    while test "$(calc $total + $i \<= $timeout)" = "1"; do
-        echo -n "$(calc $i) "
-        total=$(calc $total + $i)
-        i=$(calc $i \* 2)
+    while test "$(echo $total + $i \<= $timeout | bc -l)" = "1"; do
+        echo -n "$i "
+        total=$(echo $total + $i | bc -l)
+        i=$(echo $i \* 2 | bc -l)
     done
-    if test "$(calc $total \< $timeout)" = "1"; then
-        echo -n "$(calc $timeout - $total) "
+    if test "$(echo $total \< $timeout | bc -l)" = "1"; then
+        echo -n $(echo $timeout - $total | bc -l)
     fi
     $trace && shopt -s -o xtrace
 }
 
 function test_get_timeout_delays() {
     test "$(get_timeout_delays 1)" = "1 " || return 1
-    test "$(get_timeout_delays 5)" = "1 2 2 " || return 1
-    test "$(get_timeout_delays 6)" = "1 2 3 " || return 1
+    test "$(get_timeout_delays 5)" = "1 2 2" || return 1
+    test "$(get_timeout_delays 6)" = "1 2 3" || return 1
     test "$(get_timeout_delays 7)" = "1 2 4 " || return 1
-    test "$(get_timeout_delays 8)" = "1 2 4 1 " || return 1
-    test "$(get_timeout_delays 1 .1)" = "0.1 0.2 0.4 0.3 " || return 1
-    test "$(get_timeout_delays 1.5 .1)" = "0.1 0.2 0.4 0.8 " || return 1
-    test "$(get_timeout_delays 5 .1)" = "0.1 0.2 0.4 0.8 1.6 1.9 " || return 1
-    test "$(get_timeout_delays 6 .1)" = "0.1 0.2 0.4 0.8 1.6 2.9 " || return 1
-    test "$(get_timeout_delays 6.3 .1)" = "0.1 0.2 0.4 0.8 1.6 3.2 " || return 1
-    test "$(get_timeout_delays 20 .1)" = "0.1 0.2 0.4 0.8 1.6 3.2 6.4 7.3 " || return 1
+    test "$(get_timeout_delays 8)" = "1 2 4 1" || return 1
+    test "$(get_timeout_delays 1 .1)" = ".1 .2 .4 .3" || return 1
+    test "$(get_timeout_delays 1.5 .1)" = ".1 .2 .4 .8 " || return 1
+    test "$(get_timeout_delays 5 .1)" = ".1 .2 .4 .8 1.6 1.9" || return 1
+    test "$(get_timeout_delays 6 .1)" = ".1 .2 .4 .8 1.6 2.9" || return 1
+    test "$(get_timeout_delays 6.3 .1)" = ".1 .2 .4 .8 1.6 3.2 " || return 1
+    test "$(get_timeout_delays 20 .1)" = ".1 .2 .4 .8 1.6 3.2 6.4 7.3" || return 1
 }
 
 #######################################################################
@@ -1399,7 +1397,7 @@ function wait_for_clean() {
     local -a delays=($(get_timeout_delays $TIMEOUT .1))
     local -i loop=0
 
-    flush_pg_stats || return 1
+    flush_pg_stats
     while test $(get_num_pgs) == 0 ; do
 	sleep 1
     done
@@ -1836,7 +1834,7 @@ function test_flush_pg_stats()
     run_osd $dir 0 || return 1
     create_rbd_pool || return 1
     rados -p rbd put obj /etc/group
-    flush_pg_stats || return 1
+    flush_pg_stats
     local jq_filter='.pools | .[] | select(.name == "rbd") | .stats'
     raw_bytes_used=`ceph df detail --format=json | jq "$jq_filter.raw_bytes_used"`
     bytes_used=`ceph df detail --format=json | jq "$jq_filter.bytes_used"`

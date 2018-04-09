@@ -12,11 +12,11 @@ ls on empty pool never containing images
 
 create
 =======
-  $ RBD_FORCE_ALLOW_V1=1 rbd create -s 1024 --image-format 1 foo --log-to-stderr=false
+  $ rbd create -s 1024 --image-format 1 foo
   rbd: image format 1 is deprecated
   $ rbd create -s 512 --image-format 2 bar
   $ rbd create -s 2048 --image-format 2 --image-feature layering baz
-  $ RBD_FORCE_ALLOW_V1=1 rbd create -s 1 --image-format 1 quux --log-to-stderr=false
+  $ rbd create -s 1 --image-format 1 quux
   rbd: image format 1 is deprecated
   $ rbd create -s 1G --image-format 2 quuy
 
@@ -64,7 +64,6 @@ For now, use a more inclusive regex.
   {
       "block_name_prefix": "rb.0.*",  (glob)
       "format": 1, 
-      "id": "", 
       "name": "foo", 
       "object_size": 4194304, 
       "objects": 256, 
@@ -76,7 +75,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   $ rbd info foo --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <image>
     <name>foo</name>
-    <id></id>
     <size>1073741824</size>
     <objects>256</objects>
     <order>22</order>
@@ -95,7 +93,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   {
       "block_name_prefix": "rb.0.*",  (glob)
       "format": 1, 
-      "id": "", 
       "name": "foo", 
       "object_size": 4194304, 
       "objects": 256, 
@@ -106,7 +103,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   $ rbd info foo@snap --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <image>
     <name>foo</name>
-    <id></id>
     <size>1073741824</size>
     <objects>256</objects>
     <order>22</order>
@@ -119,7 +115,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   rbd image 'bar':
   \tsize 1024 MB in 256 objects (esc)
   \torder 22 (4096 kB objects) (esc)
-  \tid:* (glob)
   [^^]+ (re)
   \tformat: 2 (esc)
   \tfeatures: layering, exclusive-lock, object-map, fast-diff, deep-flatten (esc)
@@ -139,7 +134,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
       ], 
       "flags": [], 
       "format": 2, 
-      "id": "*",  (glob)
       "name": "bar", 
       "object_size": 4194304, 
       "objects": 256, 
@@ -150,7 +144,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   $ rbd info bar --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <image>
     <name>bar</name>
-    <id>*</id> (glob)
     <size>1073741824</size>
     <objects>256</objects>
     <order>22</order>
@@ -172,7 +165,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   rbd image 'bar':
   \tsize 512 MB in 128 objects (esc)
   \torder 22 (4096 kB objects) (esc)
-  \tid:* (glob)
   [^^]+ (re)
   \tformat: 2 (esc)
   \tfeatures: layering, exclusive-lock, object-map, fast-diff, deep-flatten (esc)
@@ -193,7 +185,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
       ], 
       "flags": [], 
       "format": 2, 
-      "id": "*",  (glob)
       "name": "bar", 
       "object_size": 4194304, 
       "objects": 128, 
@@ -205,7 +196,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   $ rbd info bar@snap --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <image>
     <name>bar</name>
-    <id>*</id> (glob)
     <size>536870912</size>
     <objects>128</objects>
     <order>22</order>
@@ -228,7 +218,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   rbd image 'bar':
   \tsize 1024 MB in 256 objects (esc)
   \torder 22 (4096 kB objects) (esc)
-  \tid:* (glob)
   [^^]+ (re)
   \tformat: 2 (esc)
   \tfeatures: layering, exclusive-lock, object-map, fast-diff, deep-flatten (esc)
@@ -249,7 +238,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
       ], 
       "flags": [], 
       "format": 2, 
-      "id": "*",  (glob)
       "name": "bar", 
       "object_size": 4194304, 
       "objects": 256, 
@@ -261,7 +249,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   $ rbd info bar@snap2 --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <image>
     <name>bar</name>
-    <id>*</id> (glob)
     <size>1073741824</size>
     <objects>256</objects>
     <order>22</order>
@@ -284,7 +271,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   rbd image 'baz':
   \tsize 2048 MB in 512 objects (esc)
   \torder 22 (4096 kB objects) (esc)
-  \tid:* (glob)
   [^^]+ (re)
   \tformat: 2 (esc)
   \tfeatures: layering (esc)
@@ -300,7 +286,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
       ], 
       "flags": [], 
       "format": 2, 
-      "id": "*",  (glob)
       "name": "baz", 
       "object_size": 4194304, 
       "objects": 512, 
@@ -311,7 +296,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   $ rbd info baz --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <image>
     <name>baz</name>
-    <id>*</id> (glob)
     <size>2147483648</size>
     <objects>512</objects>
     <order>22</order>
@@ -335,7 +319,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   {
       "block_name_prefix": "rb.0.*",  (glob)
       "format": 1, 
-      "id": "", 
       "name": "quux", 
       "object_size": 4194304, 
       "objects": 1, 
@@ -345,7 +328,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   $ rbd info quux --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <image>
     <name>quux</name>
-    <id></id>
     <size>1048576</size>
     <objects>1</objects>
     <order>22</order>
@@ -357,7 +339,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   rbd image 'child':
   \tsize 512 MB in 128 objects (esc)
   \torder 22 (4096 kB objects) (esc)
-  \tid:* (glob)
   [^^]+ (re)
   \tformat: 2 (esc)
   \tfeatures: layering, exclusive-lock, object-map, fast-diff (esc)
@@ -376,7 +357,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
       ], 
       "flags": [], 
       "format": 2, 
-      "id": "*",  (glob)
       "name": "child", 
       "object_size": 4194304, 
       "objects": 128, 
@@ -387,7 +367,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   $ rbd info rbd_other/child --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <image>
     <name>child</name>
-    <id>*</id> (glob)
     <size>536870912</size>
     <objects>128</objects>
     <order>22</order>
@@ -408,7 +387,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   rbd image 'child':
   \tsize 512 MB in 128 objects (esc)
   \torder 22 (4096 kB objects) (esc)
-  \tid:* (glob)
   [^^]+ (re)
   \tformat: 2 (esc)
   \tfeatures: layering, exclusive-lock, object-map, fast-diff (esc)
@@ -430,7 +408,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
       ], 
       "flags": [], 
       "format": 2, 
-      "id": "*",  (glob)
       "name": "child", 
       "object_size": 4194304, 
       "objects": 128, 
@@ -448,7 +425,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   $ rbd info rbd_other/child@snap --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <image>
     <name>child</name>
-    <id>*</id> (glob)
     <size>536870912</size>
     <objects>128</objects>
     <order>22</order>
@@ -476,7 +452,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   rbd image 'deep-flatten-child':
   \tsize 512 MB in 128 objects (esc)
   \torder 22 (4096 kB objects) (esc)
-  \tid:* (glob)
   [^^]+ (re)
   \tformat: 2 (esc)
   \tfeatures: layering, exclusive-lock, object-map, fast-diff, deep-flatten (esc)
@@ -496,7 +471,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
       ], 
       "flags": [], 
       "format": 2, 
-      "id": "*",  (glob)
       "name": "deep-flatten-child", 
       "object_size": 4194304, 
       "objects": 128, 
@@ -507,7 +481,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   $ rbd info rbd_other/deep-flatten-child --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <image>
     <name>deep-flatten-child</name>
-    <id>*</id> (glob)
     <size>536870912</size>
     <objects>128</objects>
     <order>22</order>
@@ -529,7 +502,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   rbd image 'deep-flatten-child':
   \tsize 512 MB in 128 objects (esc)
   \torder 22 (4096 kB objects) (esc)
-  \tid:* (glob)
   [^^]+ (re)
   \tformat: 2 (esc)
   \tfeatures: layering, exclusive-lock, object-map, fast-diff, deep-flatten (esc)
@@ -550,7 +522,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
       ], 
       "flags": [], 
       "format": 2, 
-      "id": "*",  (glob)
       "name": "deep-flatten-child", 
       "object_size": 4194304, 
       "objects": 128, 
@@ -562,7 +533,6 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   $ rbd info rbd_other/deep-flatten-child@snap --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <image>
     <name>deep-flatten-child</name>
-    <id>*</id> (glob)
     <size>536870912</size>
     <objects>128</objects>
     <order>22</order>

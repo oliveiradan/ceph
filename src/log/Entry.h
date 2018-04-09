@@ -48,10 +48,6 @@ struct Entry {
     }
   }
 
-private:
-  ~Entry() = default;
-
-public:
   std::ostream& get_ostream() {
     return m_streambuf->get_ostream();
   }
@@ -91,15 +87,6 @@ public:
 
   void finish() {
     m_streambuf->finish();
-  }
-
-  void destroy() {
-    if (m_exp_len != NULL) {
-      this->~Entry();
-      ::operator delete(this);
-    } else {
-      delete(this);
-    }
   }
 };
 

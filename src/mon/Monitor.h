@@ -218,8 +218,6 @@ public:
 
   void prepare_new_fingerprint(MonitorDBStore::TransactionRef t);
 
-  std::vector<DaemonHealthMetric> get_health_metrics();
-
   // -- elector --
 private:
   Paxos *paxos;
@@ -641,10 +639,6 @@ public:
 
   class HealthMonitor *healthmon() {
     return (class HealthMonitor*) paxos_service[PAXOS_HEALTH];
-  }
-
-  class ConfigMonitor *configmon() {
-    return (class ConfigMonitor*) paxos_service[PAXOS_CONFIG];
   }
 
   friend class Paxos;

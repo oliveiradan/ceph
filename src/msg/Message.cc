@@ -34,8 +34,6 @@
 #include "messages/MMonCommand.h"
 #include "messages/MMonCommandAck.h"
 #include "messages/MMonPaxos.h"
-#include "messages/MConfig.h"
-#include "messages/MGetConfig.h"
 
 #include "messages/MMonProbe.h"
 #include "messages/MMonJoin.h"
@@ -97,7 +95,6 @@
 #include "messages/MMonGetMap.h"
 #include "messages/MMonGetVersion.h"
 #include "messages/MMonGetVersionReply.h"
-#include "messages/MMonHealth.h"
 #include "messages/MMonHealthChecks.h"
 #include "messages/MMonMetadata.h"
 #include "messages/MDataPing.h"
@@ -131,7 +128,6 @@
 #include "messages/MMDSFindInoReply.h"
 #include "messages/MMDSOpenIno.h"
 #include "messages/MMDSOpenInoReply.h"
-#include "messages/MMDSSnapUpdate.h"
 
 #include "messages/MDirUpdate.h"
 #include "messages/MDiscover.h"
@@ -363,12 +359,6 @@ Message *decode_message(CephContext *cct, int crcflags,
     break;
   case MSG_MON_PAXOS:
     m = new MMonPaxos;
-    break;
-  case MSG_CONFIG:
-    m = new MConfig;
-    break;
-  case MSG_GET_CONFIG:
-    m = new MGetConfig;
     break;
 
   case MSG_MON_PROBE:
@@ -674,10 +664,6 @@ Message *decode_message(CephContext *cct, int crcflags,
     m = new MMDSOpenInoReply;
     break;
 
-  case MSG_MDS_SNAPUPDATE:
-    m = new MMDSSnapUpdate();
-    break;
-
   case MSG_MDS_FRAGMENTNOTIFY:
     m = new MMDSFragmentNotify;
     break;
@@ -797,10 +783,6 @@ Message *decode_message(CephContext *cct, int crcflags,
     m = new MTimeCheck();
     break;
 
-  case MSG_MON_HEALTH:
-    m = new MMonHealth();
-    break;
-
   case MSG_MON_HEALTH_CHECKS:
     m = new MMonHealthChecks();
     break;
@@ -859,8 +841,7 @@ Message *decode_message(CephContext *cct, int crcflags,
       lderr(cct) << "failed to decode message of type " << type
 		 << " v" << header.version
 		 << ": " << e.what() << dendl;
-      ldout(cct, ceph::dout::need_dynamic(
-	cct->_conf->ms_dump_corrupt_message_level)) << "dump: \n";
+      ldout(cct, cct->_conf->ms_dump_corrupt_message_level) << "dump: \n";
       m->get_payload().hexdump(*_dout);
       *_dout << dendl;
       if (cct->_conf->ms_die_on_bad_msg)

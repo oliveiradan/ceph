@@ -219,23 +219,31 @@ int execute_map_deprecated(const po::variables_map &vm_deprecated,
 
   po::options_description options;
   options.add_options()
-    ("options,o", po::value<std::vector<std::string>>()
-                  ->default_value(std::vector<std::string>(), ""), "");
+    ("read-only", po::bool_switch(), "")
+    ("exclusive", po::bool_switch(), "")
+    ("options,o", po::value<std::vector<std::string>>(), "");
 
-  po::variables_map vm = vm_deprecated;
+  po::variables_map vm;
   po::store(po::command_line_parser({}).options(options).run(), vm);
+
+  if (vm_deprecated["read-only"].as<bool>()) {
+    vm.at("read-only").value() = boost::any(true);
+  }
+  if (vm_deprecated["exclusive"].as<bool>()) {
+    vm.at("exclusive").value() = boost::any(true);
+  }
 
   std::vector<std::string> opts;
   if (vm_deprecated.count("device")) {
     opts.push_back("device=" + vm_deprecated["device"].as<std::string>());
   }
-  if (vm_deprecated.count("nbds_max")) {
+  if (vm.count("nbds_max")) {
     opts.push_back("nbds_max=" + vm_deprecated["nbds_max"].as<std::string>());
   }
-  if (vm_deprecated.count("max_part")) {
+  if (vm.count("max_part")) {
     opts.push_back("max_part=" + vm_deprecated["max_part"].as<std::string>());
   }
-  if (vm_deprecated.count("timeout")) {
+  if (vm.count("timeout")) {
     opts.push_back("timeout=" + vm_deprecated["timeout"].as<std::string>());
   }
 

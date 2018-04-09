@@ -4,7 +4,6 @@
 #define LIBRBD_TASK_FINISHER_H
 
 #include "include/Context.h"
-#include "common/ceph_context.h"
 #include "common/Finisher.h"
 #include "common/Mutex.h"
 #include "common/Timer.h"
@@ -44,12 +43,12 @@ template <typename Task>
 class TaskFinisher {
 public:
   TaskFinisher(CephContext &cct) : m_cct(cct) {
-    auto& singleton =
-      cct.lookup_or_create_singleton_object<TaskFinisherSingleton>(
-	"librbd::TaskFinisher::m_safe_timer", false, &cct);
-    m_lock = &singleton.m_lock;
-    m_safe_timer = singleton.m_safe_timer;
-    m_finisher = singleton.m_finisher;
+    TaskFinisherSingleton *singleton;
+    cct.lookup_or_create_singleton_object<TaskFinisherSingleton>(
+      singleton, "librbd::TaskFinisher::m_safe_timer");
+    m_lock = &singleton->m_lock;
+    m_safe_timer = singleton->m_safe_timer;
+    m_finisher = singleton->m_finisher;
   }
 
   void cancel(const Task& task) {

@@ -40,7 +40,6 @@ TEST(DaemonConfig, SimpleSet) {
   ret = g_ceph_context->_conf->get_val("log_graylog_port", &tmp, sizeof(buf));
   ASSERT_EQ(0, ret);
   ASSERT_EQ(string("21"), string(buf));
-  g_ceph_context->_conf->rm_val("log_graylog_port");
 }
 
 TEST(DaemonConfig, Substitution) {
@@ -48,7 +47,7 @@ TEST(DaemonConfig, Substitution) {
   g_conf->_clear_safe_to_start_threads();
   ret = g_ceph_context->_conf->set_val("host", "foo");
   ASSERT_EQ(0, ret);
-  ret = g_ceph_context->_conf->set_val("public_network", "bar$host.baz");
+  ret = g_ceph_context->_conf->set_val("public_network", "bar$host.baz", false);
   ASSERT_EQ(0, ret);
   g_ceph_context->_conf->apply_changes(NULL);
   char buf[128];
@@ -64,7 +63,7 @@ TEST(DaemonConfig, SubstitutionTrailing) {
   g_conf->_clear_safe_to_start_threads();
   ret = g_ceph_context->_conf->set_val("host", "foo");
   ASSERT_EQ(0, ret);
-  ret = g_ceph_context->_conf->set_val("public_network", "bar$host");
+  ret = g_ceph_context->_conf->set_val("public_network", "bar$host", false);
   ASSERT_EQ(0, ret);
   g_ceph_context->_conf->apply_changes(NULL);
   char buf[128];
@@ -80,7 +79,7 @@ TEST(DaemonConfig, SubstitutionBraces) {
   g_conf->_clear_safe_to_start_threads();
   ret = g_ceph_context->_conf->set_val("host", "foo");
   ASSERT_EQ(0, ret);
-  ret = g_ceph_context->_conf->set_val("public_network", "bar${host}baz");
+  ret = g_ceph_context->_conf->set_val("public_network", "bar${host}baz", false);
   ASSERT_EQ(0, ret);
   g_ceph_context->_conf->apply_changes(NULL);
   char buf[128];
@@ -95,7 +94,7 @@ TEST(DaemonConfig, SubstitutionBracesTrailing) {
   g_conf->_clear_safe_to_start_threads();
   ret = g_ceph_context->_conf->set_val("host", "foo");
   ASSERT_EQ(0, ret);
-  ret = g_ceph_context->_conf->set_val("public_network", "bar${host}");
+  ret = g_ceph_context->_conf->set_val("public_network", "bar${host}", false);
   ASSERT_EQ(0, ret);
   g_ceph_context->_conf->apply_changes(NULL);
   char buf[128];
@@ -109,9 +108,9 @@ TEST(DaemonConfig, SubstitutionBracesTrailing) {
 // config: variable substitution happen only once http://tracker.ceph.com/issues/7103
 TEST(DaemonConfig, SubstitutionMultiple) {
   int ret;
-  ret = g_ceph_context->_conf->set_val("mon_host", "localhost");
+  ret = g_ceph_context->_conf->set_val("mon_host", "localhost", false);
   ASSERT_EQ(0, ret);
-  ret = g_ceph_context->_conf->set_val("keyring", "$mon_host/$cluster.keyring,$mon_host/$cluster.mon.keyring");
+  ret = g_ceph_context->_conf->set_val("keyring", "$mon_host/$cluster.keyring,$mon_host/$cluster.mon.keyring", false);
   ASSERT_EQ(0, ret);
   g_ceph_context->_conf->apply_changes(NULL);
   char buf[512];
@@ -128,7 +127,7 @@ TEST(DaemonConfig, ArgV) {
 
   int ret;
   const char *argv[] = { "foo", "--log-graylog-port", "22",
-			 "--key", "my-key", NULL };
+			 "--keyfile", "/tmp/my-keyfile", NULL };
   size_t argc = (sizeof(argv) / sizeof(argv[0])) - 1;
   vector<const char*> args;
   argv_to_vec(argc, argv, args);
@@ -138,9 +137,9 @@ TEST(DaemonConfig, ArgV) {
   char buf[128];
   char *tmp = buf;
   memset(buf, 0, sizeof(buf));
-  ret = g_ceph_context->_conf->get_val("key", &tmp, sizeof(buf));
+  ret = g_ceph_context->_conf->get_val("keyfile", &tmp, sizeof(buf));
   ASSERT_EQ(0, ret);
-  ASSERT_EQ(string("my-key"), string(buf));
+  ASSERT_EQ(string("/tmp/my-keyfile"), string(buf));
 
   memset(buf, 0, sizeof(buf));
   ret = g_ceph_context->_conf->get_val("log_graylog_port", &tmp, sizeof(buf));
@@ -349,8 +348,6 @@ TEST(DaemonConfig, InvalidIntegers) {
     int ret = g_ceph_context->_conf->set_val("log_graylog_port", str);
     ASSERT_EQ(-EINVAL, ret);
   }
-
-  g_ceph_context->_conf->rm_val("log_graylog_port");
 }
 
 TEST(DaemonConfig, InvalidFloats) {

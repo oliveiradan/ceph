@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <chrono>
 #include <string>
 #include <vector>
 #include <boost/variant.hpp>
@@ -20,8 +19,6 @@ struct Option {
     TYPE_BOOL,
     TYPE_ADDR,
     TYPE_UUID,
-    TYPE_SIZE,
-    TYPE_SECS,
   };
 
   const char *type_to_str(type_t t) const {
@@ -33,8 +30,6 @@ struct Option {
     case TYPE_BOOL: return "bool";
     case TYPE_ADDR: return "entity_addr_t";
     case TYPE_UUID: return "uuid_d";
-    case TYPE_SIZE: return "size_t";
-    case TYPE_SECS: return "secs";
     default: return "unknown";
     }
   }
@@ -48,35 +43,16 @@ struct Option {
     LEVEL_BASIC,
     LEVEL_ADVANCED,
     LEVEL_DEV,
-    LEVEL_UNKNOWN,
   };
 
-  static const char *level_to_str(level_t l) {
-    switch (l) {
+  const char *level_to_str(level_t l) const {
+    switch(l) {
       case LEVEL_BASIC: return "basic";
       case LEVEL_ADVANCED: return "advanced";
-      case LEVEL_DEV: return "dev";
+      case LEVEL_DEV: return "developer";
       default: return "unknown";
     }
   }
-
-  enum flag_t {
-    FLAG_RUNTIME = 0x1,         ///< option can change changed at runtime
-    FLAG_NO_MON_UPDATE = 0x2,   ///< option cannot be changed via mon config
-    FLAG_STARTUP = 0x4,         ///< option can only take effect at startup
-    FLAG_CLUSTER_CREATE = 0x8,  ///< option only has effect at cluster creation
-    FLAG_CREATE = 0x10,         ///< option only has effect at daemon creation
-  };
-
-  struct size_t {
-    std::size_t value;
-    operator uint64_t() const {
-      return static_cast<uint64_t>(value);
-    }
-    bool operator==(const size_t& rhs) const {
-      return value == rhs.value;
-    }
-  };
 
   using value_t = boost::variant<
     boost::blank,
@@ -86,8 +62,6 @@ struct Option {
     double,
     bool,
     entity_addr_t,
-    std::chrono::seconds,
-    size_t,
     uuid_d>;
   const std::string name;
   const type_t type;
@@ -96,14 +70,8 @@ struct Option {
   std::string desc;
   std::string long_desc;
 
-  unsigned flags = 0;
-
-  int subsys = -1; // if >= 0, we are a subsys debug level
-
   value_t value;
   value_t daemon_value;
-
-  static std::string to_str(const value_t& v);
 
   // Items like mon, osd, rgw, rbd, ceph-fuse.  This is advisory metadata
   // for presentation layers (like web dashboards, or generated docs), so that
@@ -125,6 +93,8 @@ struct Option {
   value_t min, max;
   std::vector<const char*> enum_allowed;
 
+  bool safe;
+
   /**
    * Return nonzero and set second argument to error string if the
    * value is invalid.
@@ -136,31 +106,26 @@ struct Option {
   validator_fn_t validator;
 
   Option(std::string const &name, type_t t, level_t l)
-    : name(name), type(t), level(l)
+    : name(name), type(t), level(l), safe(false)
   {
     // While value_t is nullable (via boost::blank), we don't ever
     // want it set that way in an Option instance: within an instance,
     // the type of ::value should always match the declared type.
-    switch (type) {
-    case TYPE_INT:
-      value = int64_t(0); break;
-    case TYPE_UINT:
-      value = uint64_t(0); break;
-    case TYPE_STR:
-      value = std::string(""); break;
-    case TYPE_FLOAT:
-      value = 0.0; break;
-    case TYPE_BOOL:
-      value = false; break;
-    case TYPE_ADDR:
-      value = entity_addr_t(); break;
-    case TYPE_UUID:
-      value = uuid_d(); break;
-    case TYPE_SIZE:
-      value = size_t{0}; break;
-    case TYPE_SECS:
-      value = std::chrono::seconds{0}; break;
-    default:
+    if (type == TYPE_INT) {
+      value = int64_t(0);
+    } else if (type == TYPE_UINT) {
+      value = uint64_t(0);
+    } else if (type == TYPE_STR) {
+      value = std::string("");
+    } else if (type == TYPE_FLOAT) {
+      value = 0.0;
+    } else if (type == TYPE_BOOL) {
+      value = false;
+    } else if (type == TYPE_ADDR) {
+      value = entity_addr_t();
+    } else if (type == TYPE_UUID) {
+      value = uuid_d();
+    } else {
       ceph_abort();
     }
   }
@@ -197,33 +162,21 @@ struct Option {
   // a float option to "0" actually sets the double part of variant.
   template<typename T, typename is_integer<T>::type = 0>
   Option& set_value(value_t& v, T new_value) {
-    switch (type) {
-    case TYPE_INT:
-      v = int64_t(new_value); break;
-    case TYPE_UINT:
-      v = uint64_t(new_value); break;
-    case TYPE_FLOAT:
-      v = double(new_value); break;
-    case TYPE_BOOL:
-      v = bool(new_value); break;
-    case TYPE_SIZE:
-      v = size_t{static_cast<std::size_t>(new_value)}; break;
-    case TYPE_SECS:
-      v = std::chrono::seconds{new_value}; break;
-    default:
+    if (type == TYPE_INT) {
+      v = int64_t(new_value);
+    } else if (type == TYPE_UINT) {
+      v = uint64_t(new_value);
+    } else if (type == TYPE_FLOAT) {
+      v = double(new_value);
+    } else if (type == TYPE_BOOL) {
+      v = bool(new_value);
+    } else {
       std::cerr << "Bad type in set_value: " << name << ": "
                 << typeid(T).name() << std::endl;
       ceph_abort();
     }
     return *this;
   }
-
-  /// parse and validate a string input
-  int parse_value(
-    const std::string& raw_val,
-    value_t *out,
-    std::string *error_message,
-    std::string *normalized_value=nullptr) const;
 
   template<typename T>
   Option& set_default(const T& v) {
@@ -286,12 +239,8 @@ struct Option {
     return *this;
   }
 
-  Option &set_flag(flag_t f) {
-    flags |= f;
-    return *this;
-  }
-  Option &set_flags(flag_t f) {
-    flags |= f;
+  Option &set_safe() {
+    safe = true;
     return *this;
   }
 
@@ -301,33 +250,17 @@ struct Option {
     return *this;
   }
 
-  Option &set_subsys(int s) {
-    subsys = s;
-    return *this;
-  }
-
   void dump(Formatter *f) const;
-  void print(ostream *out) const;
-
-  bool has_flag(flag_t f) const {
-    return flags & f;
-  }
 
   /**
    * A crude indicator of whether the value may be
    * modified safely at runtime -- should be replaced
    * with proper locking!
    */
-  bool can_update_at_runtime() const
+  bool is_safe() const
   {
-    return
-      (has_flag(FLAG_RUNTIME)
-       || type == TYPE_BOOL || type == TYPE_INT
-       || type == TYPE_UINT || type == TYPE_FLOAT
-       || type == TYPE_SIZE || type == TYPE_SECS)
-      && !has_flag(FLAG_STARTUP)
-      && !has_flag(FLAG_CLUSTER_CREATE)
-      && !has_flag(FLAG_CREATE);
+    return safe || type == TYPE_BOOL || type == TYPE_INT
+                || type == TYPE_UINT || type == TYPE_FLOAT;
   }
 };
 
