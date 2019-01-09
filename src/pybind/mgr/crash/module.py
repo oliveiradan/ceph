@@ -1,10 +1,12 @@
-from mgr_module import MgrModule
+from mgr_module import MgrModule, CommandResult
+import time
 import datetime
 import errno
 import json
 import six
 from collections import defaultdict
-
+#from . import dump_handler
+#from . import crash_common
 
 DATEFMT = '%Y-%m-%d %H:%M:%S.%f'
 
@@ -81,9 +83,25 @@ class Module(MgrModule):
         keys = []
         for k, meta in self.timestamp_filter(lambda ts: True):
             process_name = meta.get('process_name', 'unknown')
+            entity_name = ''
+            ceph_version = ''
+
             if not process_name:
                 process_name = 'unknown'
-            keys.append("%s %s" % (k.replace('crash/', ''), process_name))
+            else:
+                if 'mode' in cmd and (cmd['mode'] == 'adv' or 
+                                      cmd['mode'] == 'advanced'):
+                    self.log.warn("Handling 'ls' command mode: '%s'" % str(cmd['mode']))
+                    entity_name = meta.get('entity_name', 'unknown')
+                    entity_name = '-> {}'.format(entity_name)
+                    ceph_version = meta.get('ceph_version', 'unknown')
+                    ceph_version = '\n {:>64} version -> {}'.format(' ', ceph_version)
+                    ceph_version += '\n'
+
+            keys.append("%s %s %s %s" % (k.replace('crash/', ''),
+                                         process_name,
+                                         entity_name,
+                                         ceph_version))
         keys.sort()
         return 0, '\n'.join(keys), ''
 
@@ -178,6 +196,35 @@ class Module(MgrModule):
         if dt != datetime.datetime(2018, 6, 22, 20, 35, 38, 58818):
             raise RuntimeError('time_from_string() failed')
 
+    def do_gather_info(self, cmd, inbuf):
+        if 'mode' in cmd and cmd['mode'] == 'advanced':
+            self.log.debug("Handling 'gather' command mode: '%s'" % str(cmd['mode']))
+
+        start = time.time()
+        #mgr_id = get_mgr_id
+        mon_result = CommandResult()
+        cmd_dict = {}
+        self.send_command(mon_result, 'mgr', '', json.dumps(cmd_dict), "")
+        waiting = mon_result.wait()
+        finish = time.time()
+
+        self.log.debug("mgr_command: '{0}' -> {1} in {2:.3f}s".format(
+            cmd_dict['prefix'], waiting[0], finish - start
+        ))
+
+        '''
+        for server in self.list_servers():
+            self.log.debug('Gathered info: {}'.format(server))
+            version = server.get('ceph_version', '')
+            host = server.get('hostname', '')
+            self.log.debug('info: {} / {}'.format(version, host))
+            for service in server.get('services', []):
+                result.update({(service['id'], service['type']): (host, version)})
+                self.log.debug('service: {} '.format(result))
+        '''
+        return 0, '', ''
+
+
     COMMANDS = [
         {
             'cmd': 'crash info name=id,type=CephString',
@@ -186,7 +233,8 @@ class Module(MgrModule):
             'handler': do_info,
         },
         {
-            'cmd': 'crash ls',
+            'cmd':  'crash ls '
+                    'name=mode,type=CephString,req=False',
             'desc': 'Show saved crash dumps',
             'perm': 'r',
             'handler': do_ls,
@@ -220,5 +268,12 @@ class Module(MgrModule):
             'desc': 'Crashes in the last <hours> hours',
             'perm': 'r',
             'handler': do_json_report,
+        },
+        {
+            'cmd':  'crash gather '
+                    'name=mode,type=CephString,req=False',
+            'desc': 'Search and gather troubleshooting information',
+            'perm': 'r',
+            'handler': do_gather_info,
         },
     ]

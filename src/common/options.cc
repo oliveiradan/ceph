@@ -563,7 +563,8 @@ std::vector<Option> get_global_options() {
 
     Option("crash_dir", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default("/var/lib/ceph/crash")
-    .set_description("Directory where crash reports are archived"),
+    .set_description("Directory where crash reports are archived")
+    .add_see_also("mgr_crash_dir"),
 
     // restapi
     Option("restapi_log_level", Option::TYPE_STR, Option::LEVEL_ADVANCED)
@@ -585,7 +586,8 @@ std::vector<Option> get_global_options() {
     .add_see_also({"log_to_stderr",
                    "err_to_stderr",
                    "log_to_syslog",
-                   "err_to_syslog"}),
+                   "err_to_syslog", 
+                   "mgr_crash_dir"}),
 
     Option("log_max_new", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(1000)
@@ -5124,6 +5126,15 @@ std::vector<Option> get_global_options() {
     .add_service("mgr")
     .set_description("Filesystem path to the ceph-mgr data directory, used to "
                      "contain keyring."),
+
+    Option("mgr_crash_dir", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("")
+    .add_service("mgr")
+    .set_description("Directory where manager crash reports are stored")
+    .set_long_description("This sets an alternative location for manager crash reports only "
+        "If it is not set, manager crashes will follow the default behavior to store crash " 
+        "reports at $crash_dir location.")
+    .add_see_also("crash_dir"),
 
     Option("mgr_tick_period", Option::TYPE_SECS, Option::LEVEL_ADVANCED)
     .set_default(2)

@@ -171,7 +171,7 @@ static void handle_fatal_signal(int signum)
 
   char base[PATH_MAX] = { 0 };
   if (g_ceph_context &&
-      g_ceph_context->_conf->crash_dir.size()) {
+      g_ceph_context->_conf->crash_dir.size()) { 
     // -- crash dump --
     // id
     ostringstream idss;
@@ -183,88 +183,98 @@ static void handle_fatal_signal(int signum)
     string id = idss.str();
     std::replace(id.begin(), id.end(), ' ', '_');
 
-    snprintf(base, sizeof(base), "%s/%s",
-	     g_ceph_context->_conf->crash_dir.c_str(),
-	     id.c_str());
+    // Default $crash_dir
+    std::string crash_dir(g_ceph_context->
+                            _conf.get_val<std::string>("crash_dir"));
+    // If we have a mgr and 'mgr_crash_dir' is set.
+    if (g_ceph_context->_conf->name.is_mgr()) {
+      std::string mgr_crash_dir(g_ceph_context->
+                                  _conf.get_val<std::string>("mgr_crash_dir"));
+      if (!mgr_crash_dir.empty()) {
+        crash_dir = mgr_crash_dir;
+      }
+    }
+
+    snprintf(base, sizeof(base), "%s/%s", crash_dir.c_str(), id.c_str());
     int r = ::mkdir(base, 0700);
     if (r >= 0) {
       char fn[PATH_MAX*2];
       snprintf(fn, sizeof(fn)-1, "%s/meta", base);
       int fd = ::open(fn, O_CREAT|O_WRONLY|O_CLOEXEC, 0600);
       if (fd >= 0) {
-	JSONFormatter jf(true);
-	jf.open_object_section("crash");
-	jf.dump_string("crash_id", id);
-	now.gmtime(jf.dump_stream("timestamp"));
-	jf.dump_string("process_name", g_process_name);
-	jf.dump_string("entity_name", g_ceph_context->_conf->name.to_str());
-	jf.dump_string("ceph_version", ceph_version_to_str());
+        JSONFormatter jf(true);
+        jf.open_object_section("crash");
+        jf.dump_string("crash_id", id);
+        now.gmtime(jf.dump_stream("timestamp"));
+        jf.dump_string("process_name", g_process_name);
+        jf.dump_string("entity_name", g_ceph_context->_conf->name.to_str());
+        jf.dump_string("ceph_version", ceph_version_to_str());
 
-	struct utsname u;
-	r = uname(&u);
-	if (r >= 0) {
-	  jf.dump_string("utsname_hostname", u.nodename);
-	  jf.dump_string("utsname_sysname", u.sysname);
-	  jf.dump_string("utsname_release", u.release);
-	  jf.dump_string("utsname_version", u.version);
-	  jf.dump_string("utsname_machine", u.machine);
-	}
+        struct utsname u;
+        r = uname(&u);
+      	if (r >= 0) {
+      	  jf.dump_string("utsname_hostname", u.nodename);
+      	  jf.dump_string("utsname_sysname", u.sysname);
+      	  jf.dump_string("utsname_release", u.release);
+      	  jf.dump_string("utsname_version", u.version);
+      	  jf.dump_string("utsname_machine", u.machine);
+      	}
 #if defined(__linux__)
-	// os-release
-	int in = ::open("/etc/os-release", O_RDONLY|O_CLOEXEC);
-	if (in >= 0) {
-	  char buf[4096];
-	  r = safe_read(in, buf, sizeof(buf)-1);
-	  if (r >= 0) {
-	    buf[r] = 0;
-	    char v[4096];
-	    if (parse_from_os_release(buf, "NAME=", v) >= 0) {
-	      jf.dump_string("os_name", v);
-	    }
-	    if (parse_from_os_release(buf, "ID=", v) >= 0) {
-	      jf.dump_string("os_id", v);
-	    }
-	    if (parse_from_os_release(buf, "VERSION_ID=", v) >= 0) {
-	      jf.dump_string("os_version_id", v);
-	    }
-	    if (parse_from_os_release(buf, "VERSION=", v) >= 0) {
-	      jf.dump_string("os_version", v);
-	    }
-	  }
-	  ::close(in);
-	}
+        // os-release
+      	int in = ::open("/etc/os-release", O_RDONLY|O_CLOEXEC);
+      	if (in >= 0) {
+      	  char buf[4096];
+      	  r = safe_read(in, buf, sizeof(buf)-1);
+      	  if (r >= 0) {
+      	    buf[r] = 0;
+      	    char v[4096];
+      	    if (parse_from_os_release(buf, "NAME=", v) >= 0) {
+      	      jf.dump_string("os_name", v);
+      	    }
+      	    if (parse_from_os_release(buf, "ID=", v) >= 0) {
+      	      jf.dump_string("os_id", v);
+      	    }
+      	    if (parse_from_os_release(buf, "VERSION_ID=", v) >= 0) {
+      	      jf.dump_string("os_version_id", v);
+      	    }
+      	    if (parse_from_os_release(buf, "VERSION=", v) >= 0) {
+      	      jf.dump_string("os_version", v);
+      	    }
+      	  }
+          ::close(in);
+        }
 #endif
 
-	// assert?
-	if (g_assert_condition) {
-	  jf.dump_string("assert_condition", g_assert_condition);
-	}
-	if (g_assert_func) {
-	  jf.dump_string("assert_func", g_assert_func);
-	}
-	if (g_assert_file) {
-	  jf.dump_string("assert_file", g_assert_file);
-	}
-	if (g_assert_line) {
-	  jf.dump_unsigned("assert_line", g_assert_line);
-	}
-	if (g_assert_thread_name[0]) {
-	  jf.dump_string("assert_thread_name", g_assert_thread_name);
-	}
-	if (g_assert_msg[0]) {
-	  jf.dump_string("assert_msg", g_assert_msg);
-	}
+      	// assert?
+      	if (g_assert_condition) {
+      	  jf.dump_string("assert_condition", g_assert_condition);
+      	}
+      	if (g_assert_func) {
+      	  jf.dump_string("assert_func", g_assert_func);
+      	}
+      	if (g_assert_file) {
+      	  jf.dump_string("assert_file", g_assert_file);
+      	}
+      	if (g_assert_line) {
+      	  jf.dump_unsigned("assert_line", g_assert_line);
+      	}
+      	if (g_assert_thread_name[0]) {
+      	  jf.dump_string("assert_thread_name", g_assert_thread_name);
+      	}
+      	if (g_assert_msg[0]) {
+      	  jf.dump_string("assert_msg", g_assert_msg);
+      	}
 
-	// backtrace
-	bt.dump(&jf);
+      	// backtrace
+      	bt.dump(&jf);
 
-	jf.close_section();
-	ostringstream oss;
-	jf.flush(oss);
-	string s = oss.str();
-	r = safe_write(fd, s.c_str(), s.size());
-	(void)r;
-	::close(fd);
+      	jf.close_section();
+      	ostringstream oss;
+      	jf.flush(oss);
+      	string s = oss.str();
+      	r = safe_write(fd, s.c_str(), s.size());
+      	(void)r;
+      	::close(fd);
       }
       snprintf(fn, sizeof(fn)-1, "%s/done", base);
       ::creat(fn, 0444);
