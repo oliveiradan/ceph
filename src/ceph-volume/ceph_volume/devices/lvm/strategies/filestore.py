@@ -343,8 +343,21 @@ class MixedType(MixedStrategy):
         data_vgs = dict([(osd['data']['path'], None) for osd in self.computed['osds']])
 
         # no common vg is found, create one with all the blank SSDs
+        """
+            # Bug: https://tracker.ceph.com/issues/37502
+            Both bluestore and filestore MixedStrategy create one volume 
+            group if multiple free SSDs are detected. This can create 
+            scenarios where a single bad ssd device takes down 
+            significantly more OSDs than necessary. 
+
+            A better implementation would be to create one vg per pv/device.
+        """
+        journal_vgs = []
         if not self.common_vg:
-            journal_vg = lvm.create_vg(blank_journal_dev_paths, name_prefix='ceph-journals')
+            """journal_vg = lvm.create_vg(blank_journal_dev_paths, name_prefix='ceph-journals')"""
+            for device in blank_journal_dev_paths:
+                journal_vg = lvm.create_vg(device, name_prefix='ceph-journals')
+                journal_vgs.append(journal_vg)
         # a vg exists that can be extended
         elif self.common_vg and blank_journal_dev_paths:
             journal_vg = lvm.extend_vg(self.common_vg, blank_journal_dev_paths)
